@@ -137,7 +137,7 @@ class PainterModel(BaseModel):
 
     def __init__(self, opt):
         BaseModel.__init__(self, opt)
-        self.loss_names = ['pixel', 'gt', 'w', 'decision']
+        self.loss_names = ['pixel', 'gt', 'decision']
         self.visual_names = ['old', 'render', 'rec']
         self.model_names = ['g']
         self.d = 12  # xc, yc, w, h, theta, R0, G0, B0, R2, G2, B2, A
@@ -160,7 +160,7 @@ class PainterModel(BaseModel):
         model = BetaVAE_B_256(z_dim=5, nc=1)       
         run = 'strokes_aug_gamma100_z5_size256_maxiter_1e6'
         epoch = 'last'    
-        state = torch.load(os.path.join('../../Beta-VAE/checkpoints',run,epoch),map_location='cpu')        
+        state = torch.load(os.path.join('./strokes_aug_gamma100_z5_size256_iter_400000.pt'),map_location='cpu')        
         model.load_state_dict(state['model_states']['net'])
         
         self.generative_model = model.to(self.device)
@@ -234,7 +234,7 @@ class PainterModel(BaseModel):
             # print(img.shape)
             alphas = (img>0.3).float()
             img = alphas*img
-            rgb = torch.sigmoid(param[5:]).unsqueeze(2).unsqueeze(3)
+            rgb = torch.sigmoid(param[5:8]).unsqueeze(2).unsqueeze(3)
     #         print(img.device, rgb.device)
             brush = img*rgb
             # alphas = (img>0.8).float()
@@ -349,11 +349,12 @@ class PainterModel(BaseModel):
 
     def forward(self):
         param, decisions = self.net_g(self.render, self.old)
+        print(param.shape)
         # stroke_param: b, stroke_per_patch, param_per_stroke
         # decision: b, stroke_per_patch, 1
         self.pred_decision = decisions.view(-1, self.opt.used_strokes).contiguous()
-        self.pred_param = param[:, :, :self.d_shape]
-        param = param.view(-1, self.d).contiguous()
+        self.pred_param = param[:, :, :self.d_shape] ## 3,8,5
+        param = param.view(-1, self.d).contiguous()   # 24,12
         foregrounds, alphas = self.param2stroke(param, self.patch_size, self.patch_size)
         foregrounds = morphology.Dilation2d(m=1)(foregrounds)
         alphas = morphology.Erosion2d(m=1)(alphas)
@@ -414,17 +415,21 @@ class PainterModel(BaseModel):
         with torch.no_grad():
             r_idx = []
             c_idx = []
-            for i in range(self.gt_param.shape[0]):
-                is_valid_gt = self.gt_decision[i].bool()    # self.gt_decision 
-                valid_gt_param = self.gt_param[i, is_valid_gt]
-                cost_matrix_l1 = torch.cdist(self.pred_param[i], valid_gt_param, p=1)  
-                pred_param_broad = self.pred_param[i].unsqueeze(1).contiguous().repeat(
-                    1, valid_gt_param.shape[0], 1)
-                valid_gt_param_broad = valid_gt_param.unsqueeze(0).contiguous().repeat(
-                    self.pred_param.shape[1], 1, 1)
+            for i in range(self.gt_param.shape[0]):  ## iterate over the batch
+                is_valid_gt = self.gt_decision[i].bool()    # this is the boolean of 8 strokes in single image (8)
+                valid_gt_param = self.gt_param[i, is_valid_gt] # this only contains the ground truth stroke parameters that are actually drawn on the canvas. (?,5)
+                cost_matrix_l1 = torch.cdist(self.pred_param[i], valid_gt_param, p=1)   # calculate the cdist between the pred_param (shape 8,5) and valid_gt_param (shape ?, 5)
+                  # this shape is (?,5)
+#                 pred_param_broad = self.pred_param[i].unsqueeze(1).contiguous().repeat(  
+#                     1, valid_gt_param.shape[0], 1)    # self.pred_param[i] shape is (8,5)
+                # then it becomes (8,1,5)  then it becomes (8,?,5)
+#                 valid_gt_param_broad = valid_gt_param.unsqueeze(0).contiguous().repeat(
+#                     self.pred_param.shape[1], 1, 1)
+                        # it becomes (1,?,5) -> (8,?,5)
+                
 #                 cost_matrix_w = self.gaussian_w_distance(pred_param_broad, valid_gt_param_broad)
-                decision = self.pred_decision[i]
-                cost_matrix_decision = (1 - decision).unsqueeze(-1).repeat(1, valid_gt_param.shape[0])
+                decision = self.pred_decision[i]  # 8
+                cost_matrix_decision = (1 - decision).unsqueeze(-1).repeat(1, valid_gt_param.shape[0]) #  (8,?)
                 r, c = linear_sum_assignment((cost_matrix_l1 + cost_matrix_decision).cpu()) # + cost_matrix_w +  
                 r_idx.append(torch.tensor(r + self.pred_param.shape[1] * i, device=self.device))
                 c_idx.append(torch.tensor(c + cur_valid_gt_size, device=self.device))

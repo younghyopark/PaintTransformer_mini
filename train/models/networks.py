@@ -113,6 +113,7 @@ class Painter(nn.Module):
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(True),
             nn.Linear(hidden_dim, param_per_stroke),
+            nn.Tanh()
             )
         self.linear_decider = nn.Linear(hidden_dim, 1)
         self.query_pos = nn.Parameter(torch.rand(total_strokes, hidden_dim))
@@ -143,4 +144,4 @@ class Painter(nn.Module):
         color = nn.functional.grid_sample(img_temp, 2 * grid - 1, align_corners=False).view(b, s, 3).contiguous()
         decision = self.linear_decider(hidden_state)
         return torch.cat([param, color, color, torch.rand(b, s, 1, device=img.device)], dim=-1), decision
-
+    ## returns param b,8,5 color b,8,3 color b,8,3 torch.rand b,8,1 => b,8,12
