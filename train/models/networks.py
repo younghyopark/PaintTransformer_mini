@@ -112,20 +112,23 @@ class Painter(nn.Module):
             nn.ReLU(True),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(True),
-            nn.Linear(hidden_dim, param_per_stroke))
+            nn.Linear(hidden_dim, param_per_stroke),
+            )
         self.linear_decider = nn.Linear(hidden_dim, 1)
         self.query_pos = nn.Parameter(torch.rand(total_strokes, hidden_dim))
-        self.row_embed = nn.Parameter(torch.rand(8, hidden_dim // 2))
-        self.col_embed = nn.Parameter(torch.rand(8, hidden_dim // 2))
+        self.row_embed = nn.Parameter(torch.rand(16, hidden_dim // 2))
+        self.col_embed = nn.Parameter(torch.rand(16, hidden_dim // 2))
 
     def forward(self, img, canvas):
         b, _, H, W = img.shape
         img_feat = self.enc_img(img)
         canvas_feat = self.enc_canvas(canvas)
         h, w = img_feat.shape[-2:]
+        # print(h,w)
         feat = torch.cat([img_feat, canvas_feat], dim=1)
         feat_conv = self.conv(feat)
 
+        # print(pos_embed)
         pos_embed = torch.cat([
             self.col_embed[:w].unsqueeze(0).contiguous().repeat(h, 1, 1),
             self.row_embed[:h].unsqueeze(1).contiguous().repeat(1, w, 1),

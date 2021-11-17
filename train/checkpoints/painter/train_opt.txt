@@ -1,0 +1,57 @@
+----------------- Options ---------------
+               batch_size: 3                             	[default: 1]
+                    beta1: 0.5                           
+          checkpoints_dir: ./checkpoints                 
+           continue_train: False                         
+                crop_size: 256                           
+                 dataroot: .                             
+             dataset_mode: null                          
+                direction: AtoB                          
+              display_env: main                          
+             display_freq: 25                            	[default: 40]
+               display_id: 1                             
+            display_ncols: 4                             
+             display_port: 8091                          	[default: 8097]
+           display_server: http://localhost              
+          display_winsize: 256                           
+                    epoch: latest                        
+              epoch_count: 1                             
+                  gpu_ids: 0                             
+                init_gain: 0.02                          
+                init_type: normal                        
+                 input_nc: 3                             
+                  isTrain: True                          	[default: None]
+          lambda_decision: 10.0                          
+                lambda_gt: 1.0                           
+             lambda_pixel: 10.0                          
+            lambda_recall: 10.0                          
+                 lambda_w: 10.0                          
+                layer_num: 2                             
+                load_iter: 0                             	[default: 0]
+                load_size: 286                           
+                       lr: 0.0001                        	[default: 0.0002]
+           lr_decay_iters: 50                            
+                lr_policy: linear                        
+         max_dataset_size: 16384                         	[default: inf]
+                    model: painter                       
+                 n_epochs: 200                           	[default: 100]
+           n_epochs_decay: 20                            	[default: 100]
+                     name: painter                       	[default: experiment_name]
+                      ngf: 256                           
+                  no_flip: False                         
+                  no_html: False                         
+               num_blocks: 3                             
+              num_threads: 4                             
+                output_nc: 3                             
+                    phase: train                         
+               preprocess: resize_and_crop               
+               print_freq: 25                            	[default: 10]
+             save_by_iter: False                         
+          save_epoch_freq: 20                            	[default: 5]
+         save_latest_freq: 5000                          
+           serial_batches: False                         
+                   suffix:                               
+         update_html_freq: 1000                          
+             used_strokes: 8                             
+                  verbose: False                         
+----------------- End -------------------

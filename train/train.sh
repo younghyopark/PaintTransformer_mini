@@ -3,7 +3,7 @@ python train.py \
 --gpu_ids 0 \
 --model painter \
 --dataset_mode null \
---batch_size 64 \
+--batch_size 3 \
 --display_freq 25 \
 --print_freq 25 \
 --lr 1e-4 \
@@ -11,4 +11,5 @@ python train.py \
 --n_epochs 200 \
 --n_epochs_decay 20 \
 --max_dataset_size 16384 \
---save_epoch_freq 20
+--save_epoch_freq 20 \
+--display_port 8091
