@@ -1,16 +1,17 @@
 python train.py \
---name painter_generative_test5_REAL \
+--name painter_generative_used_strokes_16 \
 --gpu_ids 0 \
 --model painter \
 --dataset_mode null \
---batch_size 32 \
+--batch_size 28 \
 --display_freq 25 \
 --print_freq 25 \
 --lr 1e-4 \
 --init_type normal \
 --n_epochs 200 \
 --n_epochs_decay 20 \
---max_dataset_size 16384 \
+--max_dataset_size 30000 \
 --save_epoch_freq 20 \
 --display_port 8092 \
+--used_strokes 16 \
 --generative
