@@ -141,6 +141,7 @@ class BaseModel(ABC):
                 errors_ret[name] = float(getattr(self, 'loss_' + name))  # float(...) works for both scalar tensor and float number
         return errors_ret
 
+
     def save_networks(self, epoch):
         """Save all the networks to the disk.
 
@@ -154,7 +155,7 @@ class BaseModel(ABC):
                 net = getattr(self, 'net_' + name)
 
                 if len(self.gpu_ids) > 0 and torch.cuda.is_available():
-                    torch.save(net.module.cpu().state_dict(), save_path)
+                    torch.save(net.cpu().state_dict(), save_path)
                     net.cuda(self.gpu_ids[0])
                 else:
                     torch.save(net.cpu().state_dict(), save_path)

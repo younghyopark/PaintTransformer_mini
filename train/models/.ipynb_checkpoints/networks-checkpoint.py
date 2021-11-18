@@ -137,7 +137,7 @@ class Painter(nn.Module):
         hidden_state = self.transformer(pos_embed + feat_conv.flatten(2).permute(2, 0, 1).contiguous(),
                                         self.query_pos.unsqueeze(1).contiguous().repeat(1, b, 1))
         hidden_state = hidden_state.permute(1, 0, 2).contiguous()
-        param = self.linear_param(hidden_state)
+        param = self.linear_param(hidden_state) * 3
         s = hidden_state.shape[1]
         grid = param[:, :, :2].view(b * s, 1, 1, 2).contiguous()
         img_temp = img.unsqueeze(1).contiguous().repeat(1, s, 1, 1, 1).view(b * s, 3, H, W).contiguous()

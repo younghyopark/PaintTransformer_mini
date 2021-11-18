@@ -51,7 +51,7 @@ def init_net(net, init_type='normal', init_gain=0.02, gpu_ids=()):
     if len(gpu_ids) > 0:
         assert (torch.cuda.is_available())
         net.to(gpu_ids[0])
-        net = torch.nn.DataParallel(net, gpu_ids)  # multi-GPUs
+        # net = torch.nn.DataParallel(net, gpu_ids)  # multi-GPUs
     init_weights(net, init_type, init_gain=init_gain)
     return net
 
@@ -112,7 +112,15 @@ class Painter(nn.Module):
             nn.ReLU(True),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(True),
-            nn.Linear(hidden_dim, param_per_stroke),
+            nn.Linear(hidden_dim, 5),
+            nn.Tanh()
+            )
+        self.linear_color = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(True),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(True),
+            nn.Linear(hidden_dim, 3),
             nn.Tanh()
             )
         self.linear_decider = nn.Linear(hidden_dim, 1)
@@ -139,9 +147,12 @@ class Painter(nn.Module):
         hidden_state = hidden_state.permute(1, 0, 2).contiguous()
         param = self.linear_param(hidden_state)
         s = hidden_state.shape[1]
-        grid = param[:, :, :2].view(b * s, 1, 1, 2).contiguous()
-        img_temp = img.unsqueeze(1).contiguous().repeat(1, s, 1, 1, 1).view(b * s, 3, H, W).contiguous()
-        color = nn.functional.grid_sample(img_temp, 2 * grid - 1, align_corners=False).view(b, s, 3).contiguous()
+        # grid = param[:, :, :2].view(b * s, 1, 1, 2).contiguous()
+        # img_temp = img.unsqueeze(1).contiguous().repeat(1, s, 1, 1, 1).view(b * s, 3, H, W).contiguous()
+        # color = nn.functional.grid_sample(img_temp, 2 * grid - 1, align_corners=False).view(b, s, 3).contiguous()
+        color = self.linear_color(hidden_state) 
+        print(color.shape)
         decision = self.linear_decider(hidden_state)
-        return torch.cat([param, color, color, torch.rand(b, s, 1, device=img.device)], dim=-1), decision
+        return torch.cat([param, color], dim=-1), decision
+        # return param, color, decision
     ## returns param b,8,5 color b,8,3 color b,8,3 torch.rand b,8,1 => b,8,12

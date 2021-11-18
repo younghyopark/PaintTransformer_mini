@@ -1,0 +1,84 @@
+================ Training Loss (Wed Nov 17 23:56:30 2021) ================
+================ Training Loss (Wed Nov 17 23:57:04 2021) ================
+================ Training Loss (Wed Nov 17 23:57:17 2021) ================
+================ Training Loss (Wed Nov 17 23:57:50 2021) ================
+================ Training Loss (Wed Nov 17 23:58:10 2021) ================
+(epoch: 1, iters: 800, time: 0.004, data: 0.195) pixel: 0.304 gt: 0.773 decision: 70.594 
+(epoch: 1, iters: 1600, time: 0.004, data: 0.000) pixel: 0.310 gt: 0.778 decision: 70.234 
+(epoch: 1, iters: 2400, time: 0.010, data: 0.000) pixel: 0.314 gt: 0.777 decision: 69.262 
+(epoch: 1, iters: 3200, time: 0.010, data: 0.000) pixel: 0.329 gt: 0.781 decision: 70.825 
+(epoch: 1, iters: 4000, time: 0.009, data: 0.000) pixel: 0.323 gt: 0.780 decision: 70.688 
+(epoch: 1, iters: 4800, time: 0.010, data: 0.000) pixel: 0.302 gt: 0.775 decision: 70.269 
+(epoch: 1, iters: 5600, time: 0.010, data: 0.000) pixel: 0.309 gt: 0.780 decision: 70.971 
+(epoch: 1, iters: 6400, time: 0.009, data: 0.000) pixel: 0.307 gt: 0.785 decision: 71.195 
+(epoch: 1, iters: 7200, time: 0.010, data: 0.000) pixel: 0.313 gt: 0.777 decision: 70.333 
+(epoch: 1, iters: 8000, time: 0.010, data: 0.000) pixel: 0.308 gt: 0.776 decision: 70.181 
+(epoch: 1, iters: 8800, time: 0.004, data: 0.000) pixel: 0.319 gt: 0.774 decision: 70.847 
+(epoch: 1, iters: 9600, time: 0.004, data: 0.000) pixel: 0.317 gt: 0.783 decision: 70.076 
+(epoch: 1, iters: 10400, time: 0.004, data: 0.000) pixel: 0.294 gt: 0.778 decision: 69.372 
+(epoch: 1, iters: 11200, time: 0.010, data: 0.000) pixel: 0.325 gt: 0.783 decision: 70.934 
+(epoch: 1, iters: 12000, time: 0.010, data: 0.000) pixel: 0.316 gt: 0.781 decision: 69.551 
+(epoch: 1, iters: 12800, time: 0.010, data: 0.000) pixel: 0.305 gt: 0.785 decision: 70.143 
+(epoch: 1, iters: 13600, time: 0.010, data: 0.000) pixel: 0.302 gt: 0.788 decision: 69.313 
+(epoch: 1, iters: 14400, time: 0.010, data: 0.000) pixel: 0.320 gt: 0.778 decision: 71.101 
+(epoch: 1, iters: 15200, time: 0.010, data: 0.000) pixel: 0.311 gt: 0.786 decision: 70.434 
+(epoch: 1, iters: 16000, time: 0.010, data: 0.000) pixel: 0.299 gt: 0.775 decision: 70.166 
+================ Training Loss (Thu Nov 18 00:00:04 2021) ================
+(epoch: 1, iters: 800, time: 0.004, data: 0.167) pixel: 0.306 gt: 0.783 decision: 68.657 
+(epoch: 1, iters: 1600, time: 0.010, data: 0.000) pixel: 0.313 gt: 0.774 decision: 68.536 
+(epoch: 1, iters: 2400, time: 0.009, data: 0.000) pixel: 0.316 gt: 0.780 decision: 67.921 
+(epoch: 1, iters: 3200, time: 0.010, data: 0.000) pixel: 0.303 gt: 0.785 decision: 68.767 
+(epoch: 1, iters: 4000, time: 0.010, data: 0.000) pixel: 0.295 gt: 0.778 decision: 66.692 
+(epoch: 1, iters: 4800, time: 0.009, data: 0.000) pixel: 0.290 gt: 0.777 decision: 65.551 
+(epoch: 1, iters: 5600, time: 0.010, data: 0.000) pixel: 0.302 gt: 0.774 decision: 68.909 
+(epoch: 1, iters: 6400, time: 0.009, data: 0.000) pixel: 0.308 gt: 0.787 decision: 67.221 
+(epoch: 1, iters: 7200, time: 0.004, data: 0.000) pixel: 0.315 gt: 0.783 decision: 68.162 
+(epoch: 1, iters: 8000, time: 0.004, data: 0.000) pixel: 0.295 gt: 0.775 decision: 66.718 
+(epoch: 1, iters: 8800, time: 0.004, data: 0.000) pixel: 0.322 gt: 0.774 decision: 67.440 
+(epoch: 1, iters: 9600, time: 0.010, data: 0.000) pixel: 0.306 gt: 0.782 decision: 66.607 
+(epoch: 1, iters: 10400, time: 0.009, data: 0.000) pixel: 0.301 gt: 0.782 decision: 67.936 
+(epoch: 1, iters: 11200, time: 0.010, data: 0.000) pixel: 0.309 gt: 0.777 decision: 67.044 
+================ Training Loss (Thu Nov 18 00:01:31 2021) ================
+(epoch: 1, iters: 800, time: 0.015, data: 0.206) pixel: 0.518 gt: 0.781 decision: 59.494 
+(epoch: 1, iters: 1600, time: 0.006, data: 0.000) pixel: 0.515 gt: 0.777 decision: 60.557 
+(epoch: 1, iters: 2400, time: 0.006, data: 0.000) pixel: 0.525 gt: 0.779 decision: 59.855 
+(epoch: 1, iters: 3200, time: 0.015, data: 0.000) pixel: 0.522 gt: 0.777 decision: 60.332 
+(epoch: 1, iters: 4000, time: 0.014, data: 0.000) pixel: 0.506 gt: 0.780 decision: 59.119 
+(epoch: 1, iters: 4800, time: 0.015, data: 0.000) pixel: 0.489 gt: 0.779 decision: 59.075 
+(epoch: 1, iters: 5600, time: 0.014, data: 0.000) pixel: 0.517 gt: 0.782 decision: 58.623 
+(epoch: 1, iters: 6400, time: 0.015, data: 0.000) pixel: 0.479 gt: 0.782 decision: 56.772 
+(epoch: 1, iters: 7200, time: 0.006, data: 0.000) pixel: 0.517 gt: 0.781 decision: 59.069 
+(epoch: 1, iters: 8000, time: 0.006, data: 0.000) pixel: 0.520 gt: 0.779 decision: 59.860 
+(epoch: 1, iters: 8800, time: 0.015, data: 0.000) pixel: 0.503 gt: 0.778 decision: 57.746 
+(epoch: 1, iters: 9600, time: 0.015, data: 0.000) pixel: 0.485 gt: 0.783 decision: 57.031 
+(epoch: 1, iters: 10400, time: 0.015, data: 0.000) pixel: 0.504 gt: 0.782 decision: 60.580 
+================ Training Loss (Thu Nov 18 00:03:35 2021) ================
+(epoch: 1, iters: 800, time: 0.006, data: 0.203) pixel: 0.464 gt: 0.778 decision: 59.273 
+(epoch: 1, iters: 1600, time: 0.006, data: 0.000) pixel: 0.468 gt: 0.781 decision: 60.748 
+(epoch: 1, iters: 2400, time: 0.015, data: 0.000) pixel: 0.462 gt: 0.780 decision: 61.394 
+(epoch: 1, iters: 3200, time: 0.015, data: 0.000) pixel: 0.449 gt: 0.780 decision: 60.074 
+(epoch: 1, iters: 4000, time: 0.015, data: 0.000) pixel: 0.466 gt: 0.775 decision: 59.598 
+(epoch: 1, iters: 4800, time: 0.014, data: 0.000) pixel: 0.444 gt: 0.777 decision: 59.010 
+(epoch: 1, iters: 5600, time: 0.015, data: 0.000) pixel: 0.452 gt: 0.783 decision: 61.223 
+================ Training Loss (Thu Nov 18 00:04:45 2021) ================
+(epoch: 1, iters: 800, time: 0.015, data: 0.173) pixel: 0.443 gt: 7.771 decision: 5.223 
+(epoch: 1, iters: 1600, time: 0.015, data: 0.000) pixel: 0.477 gt: 7.801 decision: 5.403 
+(epoch: 1, iters: 2400, time: 0.015, data: 0.000) pixel: 0.455 gt: 7.753 decision: 5.320 
+(epoch: 1, iters: 3200, time: 0.015, data: 0.000) pixel: 0.469 gt: 7.816 decision: 5.300 
+(epoch: 1, iters: 4000, time: 0.015, data: 0.000) pixel: 0.457 gt: 7.791 decision: 5.350 
+(epoch: 1, iters: 4800, time: 0.006, data: 0.000) pixel: 0.435 gt: 7.762 decision: 5.167 
+(epoch: 1, iters: 5600, time: 0.015, data: 0.000) pixel: 0.480 gt: 7.776 decision: 5.396 
+(epoch: 1, iters: 6400, time: 0.015, data: 0.000) pixel: 0.465 gt: 7.767 decision: 5.416 
+(epoch: 1, iters: 7200, time: 0.015, data: 0.000) pixel: 0.470 gt: 7.774 decision: 5.321 
+(epoch: 1, iters: 8000, time: 0.014, data: 0.000) pixel: 0.458 gt: 7.759 decision: 5.351 
+(epoch: 1, iters: 8800, time: 0.015, data: 0.000) pixel: 0.457 gt: 7.836 decision: 5.365 
+(epoch: 1, iters: 9600, time: 0.015, data: 0.000) pixel: 0.462 gt: 7.770 decision: 5.367 
+(epoch: 1, iters: 10400, time: 0.006, data: 0.000) pixel: 0.501 gt: 7.754 decision: 5.541 
+(epoch: 1, iters: 11200, time: 0.015, data: 0.000) pixel: 0.474 gt: 7.792 decision: 5.458 
+(epoch: 1, iters: 12000, time: 0.015, data: 0.000) pixel: 0.476 gt: 7.737 decision: 5.445 
+(epoch: 1, iters: 12800, time: 0.015, data: 0.000) pixel: 0.466 gt: 7.775 decision: 5.448 
+(epoch: 1, iters: 13600, time: 0.015, data: 0.000) pixel: 0.466 gt: 7.877 decision: 5.410 
+(epoch: 1, iters: 14400, time: 0.015, data: 0.000) pixel: 0.478 gt: 7.758 decision: 5.423 
+(epoch: 1, iters: 15200, time: 0.006, data: 0.000) pixel: 0.470 gt: 7.779 decision: 5.402 
+(epoch: 1, iters: 16000, time: 0.006, data: 0.000) pixel: 0.467 gt: 7.768 decision: 5.301 
+(epoch: 2, iters: 416, time: 0.015, data: 0.000) pixel: 0.459 gt: 7.822 decision: 5.445 

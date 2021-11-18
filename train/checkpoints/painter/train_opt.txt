@@ -16,6 +16,7 @@
           display_winsize: 256                           
                     epoch: latest                        
               epoch_count: 1                             
+               generative: False                         
                   gpu_ids: 0                             
                 init_gain: 0.02                          
                 init_type: normal                        
@@ -50,6 +51,7 @@
           save_epoch_freq: 20                            	[default: 5]
          save_latest_freq: 5000                          
            serial_batches: False                         
+                    sigma: 2.0                           
                    suffix:                               
          update_html_freq: 1000                          
              used_strokes: 8                             
