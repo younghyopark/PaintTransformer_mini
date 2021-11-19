@@ -153,22 +153,23 @@ class PainterModel(BaseModel):
             img = torch.from_numpy(img).unsqueeze(0).float() / 255.
             return img
 
-        brush_large_vertical = read_img('brush/brush_small_vertical.png', 'L').to(self.device)
-        brush_large_horizontal = read_img('brush/brush_small_horizontal.png', 'L').to(self.device)
-        self.meta_brushes = torch.cat(
-            [brush_large_vertical, brush_large_horizontal], dim=0)
-        
-        model = BetaVAE_B_256(z_dim=5, nc=1)       
-        run = 'strokes_aug_gamma100_z5_size256_maxiter_1e6'
-        epoch = 'last'    
-        state = torch.load(os.path.join('./strokes_aug_gamma100_z5_size256_iter_400000.pt'),map_location='cpu')        
-        model.load_state_dict(state['model_states']['net'])
-#         model = model.detach()
-        for param in model.parameters():
-            print(param, param.requires_grad)
-            param.requires_grad = False
-            
-        self.generative_model = model.to(self.device)
+        if not self.opt.generative:
+            brush_large_vertical = read_img('brush/brush_small_vertical.png', 'L').to(self.device)
+            brush_large_horizontal = read_img('brush/brush_small_horizontal.png', 'L').to(self.device)
+            self.meta_brushes = torch.cat(
+                [brush_large_vertical, brush_large_horizontal], dim=0)
+        else:
+            model = BetaVAE_B_256(z_dim=5, nc=1)       
+            run = 'strokes_aug_gamma100_z5_size256_maxiter_1e6'
+            epoch = 'last'    
+            state = torch.load(os.path.join('./strokes_aug_gamma100_z5_size256_iter_400000.pt'),map_location='cpu')        
+            model.load_state_dict(state['model_states']['net'])
+    #         model = model.detach()
+            for param in model.parameters():
+                print(param, param.requires_grad)
+                param.requires_grad = False
+                
+            self.generative_model = model.to(self.device)
         
         
         net_g = networks.Painter(self.d_shape, opt.used_strokes, opt.ngf,
@@ -303,12 +304,12 @@ class PainterModel(BaseModel):
         self.image_paths = input_dict['A_paths']
         with torch.no_grad():
             if not self.opt.generative:
-                old_param = torch.rand(self.opt.batch_size, self.opt.used_strokes, self.d, device=self.device)
+                old_param = torch.rand(self.opt.batch_size, self.opt.used_strokes * 3, self.d, device=self.device)
                      # batch_size //4 because we are gonna create a background by drawing 4x larger images and splitting it to 4
                 old_param[:, :, :4] = old_param[:, :, :4] * 0.5 + 0.2
                 old_param[:, :, -4:-1] = old_param[:, :, -7:-4]
             else:
-                old_param = -1 + torch.rand(self.opt.batch_size, self.opt.used_strokes, self.d, device=self.device) * 2
+                old_param = -1 + torch.rand(self.opt.batch_size, self.opt.used_strokes * 3, self.d, device=self.device) * 2
                 # old_param[:,:,:11] = -3 + torch.rand(self.opt.batch_size, self.opt.used_strokes, 11, device=self.device) * 6
 #                 old_param[:,:,:5] = self.opt.sigma * (old_param[:,:,:5] / torch.norm(old_param[:,:,:5], dim=2).unsqueeze(2))
                      # batch_size //4 because we are gonna create a background by drawing 4x larger images and splitting it to 4
@@ -323,12 +324,12 @@ class PainterModel(BaseModel):
             else:
                 foregrounds, alphas = self.latent2stroke(old_param, self.patch_size, self.patch_size)
 
-            foregrounds = foregrounds.view(self.opt.batch_size, self.opt.used_strokes, 3, self.patch_size,
+            foregrounds = foregrounds.view(self.opt.batch_size, self.opt.used_strokes * 3, 3, self.patch_size,
                                            self.patch_size).contiguous()
-            alphas = alphas.view(self.opt.batch_size, self.opt.used_strokes, 3, self.patch_size,
+            alphas = alphas.view(self.opt.batch_size, self.opt.used_strokes * 3, 3, self.patch_size,
                                  self.patch_size).contiguous()
             old = torch.zeros(self.opt.batch_size, 3, self.patch_size, self.patch_size, device=self.device)
-            for i in range(self.opt.used_strokes):
+            for i in range(self.opt.used_strokes * 3):
                 foreground = foregrounds[:, i, :, :, :]
                 alpha = alphas[:, i, :, :, :]
                 old = foreground * alpha + old * (1 - alpha)
@@ -366,7 +367,7 @@ class PainterModel(BaseModel):
                 for j in range(i):
                     iou = (torch.sum(alpha * alphas[:, j, :, :, :], dim=(-3, -2, -1)) + 1e-5) / (
                             torch.sum(alphas[:, j, :, :, :], dim=(-3, -2, -1)) + 1e-5)
-                    gt_decision[:, i] = ((iou < 0.3) | (~gt_decision[:, j].bool())).float() * gt_decision[:, i]
+                    gt_decision[:, i] = ((iou < 0.8) | (~gt_decision[:, j].bool())).float() * gt_decision[:, i]
                 decision = gt_decision[:, i].view(self.opt.batch_size, 1, 1, 1).contiguous()
                 self.render = foreground * alpha * decision + self.render * (1 - alpha * decision)
             self.gt_decision = gt_decision
@@ -378,7 +379,7 @@ class PainterModel(BaseModel):
 
     def forward(self):
         param, decisions = self.net_g(self.render, self.old)
-        print(self.net_g.linear_param[0].weight)
+        # print(self.net_g.linear_param[0].weight)
         # print('latent', param[:,:5])
         # print('color', param[:,5:8])
 #         print(param.shape)
