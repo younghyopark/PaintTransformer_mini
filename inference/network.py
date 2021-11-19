@@ -58,20 +58,32 @@ class Painter(nn.Module):
             nn.ReLU(True),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(True),
-            nn.Linear(hidden_dim, param_per_stroke))
+            nn.Linear(hidden_dim, 5),
+            nn.Tanh()
+            )
+        self.linear_color = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(True),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(True),
+            nn.Linear(hidden_dim, 3),
+            nn.Tanh()
+            )
         self.linear_decider = nn.Linear(hidden_dim, 1)
         self.query_pos = nn.Parameter(torch.rand(total_strokes, hidden_dim))
-        self.row_embed = nn.Parameter(torch.rand(8, hidden_dim // 2))
-        self.col_embed = nn.Parameter(torch.rand(8, hidden_dim // 2))
+        self.row_embed = nn.Parameter(torch.rand(16, hidden_dim // 2))
+        self.col_embed = nn.Parameter(torch.rand(16, hidden_dim // 2))
 
     def forward(self, img, canvas):
         b, _, H, W = img.shape
         img_feat = self.enc_img(img)
         canvas_feat = self.enc_canvas(canvas)
         h, w = img_feat.shape[-2:]
+        # print(h,w)
         feat = torch.cat([img_feat, canvas_feat], dim=1)
         feat_conv = self.conv(feat)
 
+        # print(pos_embed)
         pos_embed = torch.cat([
             self.col_embed[:w].unsqueeze(0).contiguous().repeat(h, 1, 1),
             self.row_embed[:h].unsqueeze(1).contiguous().repeat(1, w, 1),
@@ -80,5 +92,13 @@ class Painter(nn.Module):
                                         self.query_pos.unsqueeze(1).contiguous().repeat(1, b, 1))
         hidden_state = hidden_state.permute(1, 0, 2).contiguous()
         param = self.linear_param(hidden_state)
+        s = hidden_state.shape[1]
+        # grid = param[:, :, :2].view(b * s, 1, 1, 2).contiguous()
+        # img_temp = img.unsqueeze(1).contiguous().repeat(1, s, 1, 1, 1).view(b * s, 3, H, W).contiguous()
+        # color = nn.functional.grid_sample(img_temp, 2 * grid - 1, align_corners=False).view(b, s, 3).contiguous()
+        color = self.linear_color(hidden_state) 
+        # print(color.shape)
         decision = self.linear_decider(hidden_state)
-        return param, decision
+        return torch.cat([param, color], dim=-1), decision
+        # return param, color, decision
+    ## returns param b,8,5 color b,8,3 color b,8,3 torch.rand b,8,1 => b,8,12

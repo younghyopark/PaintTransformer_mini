@@ -6,9 +6,120 @@ import network
 import morphology
 import os
 import math
+import torch.nn as nn
+import torch.nn.init as init
+import torchvision
 
 idx = 0
 
+class View(nn.Module):
+    def __init__(self, size):
+        super(View, self).__init__()
+        self.size = size
+
+    def forward(self, tensor):
+        return tensor.view(self.size)
+
+def kaiming_init(m):
+    if isinstance(m, (nn.Linear, nn.Conv2d)):
+        init.kaiming_normal(m.weight)
+        if m.bias is not None:
+            m.bias.data.fill_(0)
+    elif isinstance(m, (nn.BatchNorm1d, nn.BatchNorm2d)):
+        m.weight.data.fill_(1)
+        if m.bias is not None:
+            m.bias.data.fill_(0)
+
+
+def normal_init(m, mean, std):
+    if isinstance(m, (nn.Linear, nn.Conv2d)):
+        m.weight.data.normal_(mean, std)
+        if m.bias.data is not None:
+            m.bias.data.zero_()
+    elif isinstance(m, (nn.BatchNorm2d, nn.BatchNorm1d)):
+        m.weight.data.fill_(1)
+        if m.bias.data is not None:
+            m.bias.data.zero_()
+
+class BetaVAE_B_256(nn.Module):
+    """Model proposed in original beta-VAE paper(Higgins et al, ICLR, 2017)."""
+
+    def __init__(self, z_dim=10, nc=1):
+        super(BetaVAE_B_256, self).__init__()
+        self.nc = nc
+        self.z_dim = z_dim
+
+        self.encoder = nn.Sequential(
+            nn.Conv2d(nc, 32, 4, 2, 1),          # B,  32, 32, 32
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32, 16, 16
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32,  8,  8
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32,  4,  4
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32,  4,  4
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32,  4,  4
+            nn.ReLU(True),
+            View((-1, 32*4*4)),                  # B, 512
+            nn.Linear(32*4*4, 256),              # B, 256
+            nn.ReLU(True),
+            nn.Linear(256, 256),                 # B, 256
+            nn.ReLU(True),
+            nn.Linear(256, z_dim*2),             # B, z_dim*2
+        )
+
+        self.decoder = nn.Sequential(
+            nn.Linear(z_dim, 256),               # B, 256
+            nn.ReLU(True),
+            nn.Linear(256, 256),                 # B, 256
+            nn.ReLU(True),
+            nn.Linear(256, 32*4*4),              # B, 512
+            nn.ReLU(True),
+            View((-1, 32, 4, 4)),                # B,  32,  4,  4
+            nn.ConvTranspose2d(32, 32, 4, 2, 1), # B,  32,  8,  8
+            nn.ReLU(True),
+            nn.ConvTranspose2d(32, 32, 4, 2, 1), # B,  32, 16, 16
+            nn.ReLU(True),
+            nn.ConvTranspose2d(32, 32, 4, 2, 1), # B,  32, 32, 32
+            nn.ReLU(True),
+            nn.ConvTranspose2d(32, 32, 4, 2, 1), # B,  32, 32, 32
+            nn.ReLU(True),
+            nn.ConvTranspose2d(32, 32, 4, 2, 1), # B,  32, 32, 32
+            nn.ReLU(True),
+            nn.ConvTranspose2d(32, nc, 4, 2, 1), # B,  nc, 64, 64
+        )
+        self.weight_init()
+
+    def weight_init(self):
+        for block in self._modules:
+            for m in self._modules[block]:
+                kaiming_init(m)
+
+    def forward(self, x):
+        distributions = self._encode(x)
+        mu = distributions[:, :self.z_dim]
+        logvar = distributions[:, self.z_dim:]
+        z = reparametrize(mu, logvar)
+        x_recon = self._decode(z)
+
+        return x_recon, mu, logvar
+    
+    def sample(self,z):
+        x_recon = self._decode(z)
+        x_recon = torch.sigmoid(x_recon)
+        return x_recon
+
+    def _encode(self, x):
+        return self.encoder(x)
+
+    def _decode(self, z):
+        return self.decoder(z)
+    
+    
+    
+    
 
 def save_img(img, output_path):
     result = Image.fromarray((img.data.cpu().numpy().transpose((1, 2, 0)) * 255).astype(np.uint8))
@@ -76,8 +187,33 @@ def param2stroke(param, H, W, meta_brushes):
     return foreground, alphas
 
 
+def latent2stroke(param, H,W, model):
+    # param: b, 10 (latent) + 3 (RGB)
+    T = torchvision.transforms.Resize([H,W])
+    b = param.shape[0]
+#         print(param[:,:-3].shape)
+#         with torch.no_grad():
+    param_latent = (param[:,:5] / torch.norm(param[:,:5],dim=1).unsqueeze(1))*2
+    img = model.sample(param_latent) ### this outputs bx3xHxW image
+    # print(param[:,:5])
+    img = T(img)
+    img = img.repeat(1,3,1,1)
+    # print(img.shape)
+    alphas = (img>0.1).float()
+#         img[img<0.3] = 0
+    img = alphas*img
+    rgb = (1+param[:,5:8]).unsqueeze(2).unsqueeze(3)/2
+    # print('rgb',rgb)
+    # if alpha
+#         print(img.device, rgb.device)
+    # print(rgb)
+    brush = img*rgb
+
+    return brush, alphas
+
+
 def param2img_serial(
-        param, decision, meta_brushes, cur_canvas, frame_dir, has_border=False, original_h=None, original_w=None):
+        param, decision, generative_model, cur_canvas, frame_dir, has_border=False, original_h=None, original_w=None):
     """
     Input stroke parameters and decisions for each patch, meta brushes, current canvas, frame directory,
     and whether there is a border (if intermediate painting results are required).
@@ -137,7 +273,7 @@ def param2img_serial(
         selected_alphas = torch.zeros(selected_param.shape[0], 3, patch_size_y, patch_size_x, device=this_canvas.device)
         if selected_param[selected_decision, :].shape[0] > 0:
             selected_foregrounds[selected_decision, :, :, :], selected_alphas[selected_decision, :, :, :] = \
-                param2stroke(selected_param[selected_decision, :], patch_size_y, patch_size_x, meta_brushes)
+                latent2stroke(selected_param[selected_decision, :], patch_size_y, patch_size_x, generative_model)
         selected_foregrounds = selected_foregrounds.view(
             b, selected_h, selected_w, 3, patch_size_y, patch_size_x).contiguous()
         selected_alphas = selected_alphas.view(b, selected_h, selected_w, 3, patch_size_y, patch_size_x).contiguous()
@@ -220,7 +356,7 @@ def param2img_serial(
     return cur_canvas
 
 
-def param2img_parallel(param, decision, meta_brushes, cur_canvas):
+def param2img_parallel(param, decision, generative_model, cur_canvas):
     """
         Input stroke parameters and decisions for each patch, meta brushes, current canvas, frame directory,
         and whether there is a border (if intermediate painting results are required).
@@ -260,7 +396,7 @@ def param2img_parallel(param, decision, meta_brushes, cur_canvas):
                                     patch_size_y // 4, patch_size_y // 4, 0, 0, 0, 0])
     foregrounds = torch.zeros(param.shape[0], 3, patch_size_y, patch_size_x, device=cur_canvas.device)
     alphas = torch.zeros(param.shape[0], 3, patch_size_y, patch_size_x, device=cur_canvas.device)
-    valid_foregrounds, valid_alphas = param2stroke(param[decision, :], patch_size_y, patch_size_x, meta_brushes)
+    valid_foregrounds, valid_alphas = latent2stroke(param[decision, :], patch_size_y, patch_size_x, generative_model)
     foregrounds[decision, :, :, :] = valid_foregrounds
     alphas[decision, :, :, :] = valid_alphas
     # foreground, alpha: b * h * w * stroke_per_patch, 3, patch_size_y, patch_size_x
@@ -373,7 +509,7 @@ def crop(img, h, w):
     return img
 
 
-def main(input_path, model_path, output_dir, need_animation=False, resize_h=None, resize_w=None, serial=False):
+def main(input_path, model_path, output_dir, generative = True, need_animation=False, resize_h=None, resize_w=None, serial=False):
     if not os.path.exists(output_dir):
         os.mkdir(output_dir)
     input_name = os.path.basename(input_path)
@@ -395,18 +531,30 @@ def main(input_path, model_path, output_dir, need_animation=False, resize_h=None
     for param in net_g.parameters():
         param.requires_grad = False
 
-    brush_large_vertical = read_img('brush/brush_large_vertical.png', 'L').to(device)
-    brush_large_horizontal = read_img('brush/brush_large_horizontal.png', 'L').to(device)
-    meta_brushes = torch.cat(
-        [brush_large_vertical, brush_large_horizontal], dim=0)
+    if not generative:
+        brush_large_vertical = read_img('brush/brush_large_vertical.png', 'L').to(device)
+        brush_large_horizontal = read_img('brush/brush_large_horizontal.png', 'L').to(device)
+        meta_brushes = torch.cat(
+            [brush_large_vertical, brush_large_horizontal], dim=0)
+    else:
+        model = BetaVAE_B_256(z_dim=5, nc=1)       
+        state = torch.load(os.path.join('../train/strokes_aug_gamma100_z5_size256_iter_400000.pt'),map_location='cpu')        
+        model.load_state_dict(state['model_states']['net'])
+        for param in model.parameters():
+            print(param, param.requires_grad)
+            param.requires_grad = False
+            
+        generative_model = model.to(device)
+
 
     with torch.no_grad():
-        original_img = read_img(input_path, 'RGB', resize_h, resize_w).to(device)
-        original_h, original_w = original_img.shape[-2:]
-        K = max(math.ceil(math.log2(max(original_h, original_w) / patch_size)), 0)
-        original_img_pad_size = patch_size * (2 ** K)
+        original_img = read_img(input_path, 'RGB', resize_h, resize_w).to(device)  # 이미지 읽어옴
+        original_h, original_w = original_img.shape[-2:]  # 이미지 shape checking
+        K = max(math.ceil(math.log2(max(original_h, original_w) / patch_size)), 0) 
+        original_img_pad_size = patch_size * (2 ** K)  
         original_img_pad = pad(original_img, original_img_pad_size, original_img_pad_size)
         final_result = torch.zeros_like(original_img_pad).to(device)
+        print('here !!', K)
         for layer in range(0, K + 1):
             layer_size = patch_size * (2 ** layer)
             img = F.interpolate(original_img_pad, (layer_size, layer_size))
@@ -421,28 +569,28 @@ def main(input_path, model_path, output_dir, need_animation=False, resize_h=None
             img_patch = img_patch.permute(0, 2, 1).contiguous().view(-1, 3, patch_size, patch_size).contiguous()
             result_patch = result_patch.permute(0, 2, 1).contiguous().view(
                 -1, 3, patch_size, patch_size).contiguous()
-            shape_param, stroke_decision = net_g(img_patch, result_patch)
+            stroke_param, stroke_decision = net_g(img_patch, result_patch)
             stroke_decision = network.SignWithSigmoidGrad.apply(stroke_decision)
 
-            grid = shape_param[:, :, :2].view(img_patch.shape[0] * stroke_num, 1, 1, 2).contiguous()
-            img_temp = img_patch.unsqueeze(1).contiguous().repeat(1, stroke_num, 1, 1, 1).view(
-                img_patch.shape[0] * stroke_num, 3, patch_size, patch_size).contiguous()
-            color = F.grid_sample(img_temp, 2 * grid - 1, align_corners=False).view(
-                img_patch.shape[0], stroke_num, 3).contiguous()
-            stroke_param = torch.cat([shape_param, color], dim=-1)
+            # grid = shape_param[:, :, :2].view(img_patch.shape[0] * stroke_num, 1, 1, 2).contiguous()
+            # img_temp = img_patch.unsqueeze(1).contiguous().repeat(1, stroke_num, 1, 1, 1).view(
+            #     img_patch.shape[0] * stroke_num, 3, patch_size, patch_size).contiguous()
+            # color = F.grid_sample(img_temp, 2 * grid - 1, align_corners=False).view(
+            #     img_patch.shape[0], stroke_num, 3).contiguous()
+            # stroke_param = torch.cat([shape_param, color], dim=-1)
             # stroke_param: b * h * w, stroke_per_patch, param_per_stroke
             # stroke_decision: b * h * w, stroke_per_patch, 1
             param = stroke_param.view(1, patch_num, patch_num, stroke_num, 8).contiguous()
             decision = stroke_decision.view(1, patch_num, patch_num, stroke_num).contiguous().bool()
             # param: b, h, w, stroke_per_patch, 8
             # decision: b, h, w, stroke_per_patch
-            param[..., :2] = param[..., :2] / 2 + 0.25
-            param[..., 2:4] = param[..., 2:4] / 2
+            # param[..., :2] = param[..., :2] / 2 + 0.25
+            # param[..., 2:4] = param[..., 2:4] / 2
             if serial:
-                final_result = param2img_serial(param, decision, meta_brushes, final_result,
+                final_result = param2img_serial(param, decision, generative_model, final_result,
                                                 frame_dir, False, original_h, original_w)
             else:
-                final_result = param2img_parallel(param, decision, meta_brushes, final_result)
+                final_result = param2img_parallel(param, decision, generative_model, final_result)
 
         border_size = original_img_pad_size // (2 * patch_num)
         img = F.interpolate(original_img_pad, (patch_size * (2 ** layer), patch_size * (2 ** layer)))
@@ -459,27 +607,27 @@ def main(input_path, model_path, output_dir, need_animation=False, resize_h=None
         # img_patch, result_patch: b, 3 * output_size * output_size, h * w
         img_patch = img_patch.permute(0, 2, 1).contiguous().view(-1, 3, patch_size, patch_size).contiguous()
         result_patch = result_patch.permute(0, 2, 1).contiguous().view(-1, 3, patch_size, patch_size).contiguous()
-        shape_param, stroke_decision = net_g(img_patch, result_patch)
+        stroke_param, stroke_decision = net_g(img_patch, result_patch)
 
-        grid = shape_param[:, :, :2].view(img_patch.shape[0] * stroke_num, 1, 1, 2).contiguous()
-        img_temp = img_patch.unsqueeze(1).contiguous().repeat(1, stroke_num, 1, 1, 1).view(
-            img_patch.shape[0] * stroke_num, 3, patch_size, patch_size).contiguous()
-        color = F.grid_sample(img_temp, 2 * grid - 1, align_corners=False).view(
-            img_patch.shape[0], stroke_num, 3).contiguous()
-        stroke_param = torch.cat([shape_param, color], dim=-1)
+        # grid = shape_param[:, :, :2].view(img_patch.shape[0] * stroke_num, 1, 1, 2).contiguous()
+        # img_temp = img_patch.unsqueeze(1).contiguous().repeat(1, stroke_num, 1, 1, 1).view(
+        #     img_patch.shape[0] * stroke_num, 3, patch_size, patch_size).contiguous()
+        # color = F.grid_sample(img_temp, 2 * grid - 1, align_corners=False).view(
+        #     img_patch.shape[0], stroke_num, 3).contiguous()
+        # stroke_param = torch.cat([shape_param, color], dim=-1)
         # stroke_param: b * h * w, stroke_per_patch, param_per_stroke
         # stroke_decision: b * h * w, stroke_per_patch, 1
         param = stroke_param.view(1, h, w, stroke_num, 8).contiguous()
         decision = stroke_decision.view(1, h, w, stroke_num).contiguous().bool()
         # param: b, h, w, stroke_per_patch, 8
         # decision: b, h, w, stroke_per_patch
-        param[..., :2] = param[..., :2] / 2 + 0.25
-        param[..., 2:4] = param[..., 2:4] / 2
+        # param[..., :2] = param[..., :2] / 2 + 0.25
+        # param[..., 2:4] = param[..., 2:4] / 2
         if serial:
-            final_result = param2img_serial(param, decision, meta_brushes, final_result,
+            final_result = param2img_serial(param, decision, generative_model, final_result,
                                             frame_dir, True, original_h, original_w)
         else:
-            final_result = param2img_parallel(param, decision, meta_brushes, final_result)
+            final_result = param2img_parallel(param, decision, generative_model, final_result)
         final_result = final_result[:, :, border_size:-border_size, border_size:-border_size]
 
         final_result = crop(final_result, original_h, original_w)
@@ -487,10 +635,11 @@ def main(input_path, model_path, output_dir, need_animation=False, resize_h=None
 
 
 if __name__ == '__main__':
-    main(input_path='input/chicago.jpg',
-         model_path='model.pth',
+    main(input_path='../picture/2.jpg',
+         model_path='../train/checkpoints/painter_generative_GTstroke_8_background_24_GT_100_pix_10_iou_0.8/latest_net_g.pth',
          output_dir='output/',
-         need_animation=False,  # whether need intermediate results for animation.
-         resize_h=None,         # resize original input to this size. None means do not resize.
-         resize_w=None,         # resize original input to this size. None means do not resize.
-         serial=False)          # if need animation, serial must be True.
+         generative=True,
+         need_animation=True,  # whether need intermediate results for animation.
+         resize_h=64,         # resize original input to this size. None means do not resize.
+         resize_w=64,         # resize original input to this size. None means do not resize.
+         serial=True)          # if need animation, serial must be True.
