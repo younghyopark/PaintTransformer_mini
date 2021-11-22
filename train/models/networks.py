@@ -91,6 +91,8 @@ class Painter(nn.Module):
             nn.ReflectionPad2d(1),
             nn.Conv2d(64, 128, 3, 2),
             nn.BatchNorm2d(128),
+            nn.Conv2d(128, 256, 3, 2),
+            nn.BatchNorm2d(256),
             nn.ReLU(True))
         self.enc_canvas = nn.Sequential(
             nn.ReflectionPad2d(1),
@@ -104,8 +106,10 @@ class Painter(nn.Module):
             nn.ReflectionPad2d(1),
             nn.Conv2d(64, 128, 3, 2),
             nn.BatchNorm2d(128),
+            nn.Conv2d(128, 256, 3, 2),
+            nn.BatchNorm2d(256),
             nn.ReLU(True))
-        self.conv = nn.Conv2d(128 * 2, hidden_dim, 1)
+        self.conv = nn.Conv2d(256 * 2, hidden_dim, 1)
         self.transformer = nn.Transformer(hidden_dim, n_heads, n_enc_layers, n_dec_layers)
         self.linear_param = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
@@ -125,8 +129,8 @@ class Painter(nn.Module):
             )
         self.linear_decider = nn.Linear(hidden_dim, 1)
         self.query_pos = nn.Parameter(torch.rand(total_strokes, hidden_dim))
-        self.row_embed = nn.Parameter(torch.rand(16, hidden_dim // 2))
-        self.col_embed = nn.Parameter(torch.rand(16, hidden_dim // 2))
+        self.row_embed = nn.Parameter(torch.rand(31, hidden_dim // 2))
+        self.col_embed = nn.Parameter(torch.rand(31, hidden_dim // 2))
 
     def forward(self, img, canvas):
         b, _, H, W = img.shape

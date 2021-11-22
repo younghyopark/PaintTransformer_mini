@@ -2,3 +2,4 @@ train/checkpoints/*/web/images
 *.pth
 inference/output
 inference/output_without_patch
+train/*.pt

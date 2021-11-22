@@ -41,6 +41,8 @@ def normal_init(m, mean, std):
         if m.bias.data is not None:
             m.bias.data.zero_()
 
+
+
 class BetaVAE_B_256(nn.Module):
     """Model proposed in original beta-VAE paper(Higgins et al, ICLR, 2017)."""
 
@@ -131,7 +133,7 @@ class PainterModel(BaseModel):
                             help='number of transformer blocks for stroke generator')
         parser.add_argument('--lambda_w', type=float, default=10.0, help='weight for w loss of stroke shape')
         parser.add_argument('--lambda_pixel', type=float, default=10.0, help='weight for pixel-level L1 loss')
-        parser.add_argument('--lambda_gt', type=float, default=10.0, help='weight for ground-truth loss')
+        parser.add_argument('--lambda_gt', type=float, default=100.0, help='weight for ground-truth loss')
         parser.add_argument('--lambda_decision', type=float, default=1.0, help='weight for stroke decision loss')
         parser.add_argument('--lambda_recall', type=float, default=10.0, help='weight of recall for stroke decision loss')
         return parser
@@ -141,8 +143,8 @@ class PainterModel(BaseModel):
         self.loss_names = ['pixel', 'gt', 'decision']
         self.visual_names = ['old', 'render', 'rec']
         self.model_names = ['g']
-        self.d = 12  # xc, yc, w, h, theta, R0, G0, B0, R2, G2, B2, A
-        self.d_shape = 5
+        self.d = 8  # latent 5 + rgb 3
+        self.d_shape = 8
 
         def read_img(img_path, img_type='RGB'):
             img = Image.open(img_path).convert(img_type)
@@ -153,22 +155,23 @@ class PainterModel(BaseModel):
             img = torch.from_numpy(img).unsqueeze(0).float() / 255.
             return img
 
-        brush_large_vertical = read_img('brush/brush_small_vertical.png', 'L').to(self.device)
-        brush_large_horizontal = read_img('brush/brush_small_horizontal.png', 'L').to(self.device)
-        self.meta_brushes = torch.cat(
-            [brush_large_vertical, brush_large_horizontal], dim=0)
-        
-        model = BetaVAE_B_256(z_dim=5, nc=1)       
-        run = 'strokes_aug_gamma100_z5_size256_maxiter_1e6'
-        epoch = 'last'    
-        state = torch.load(os.path.join('./strokes_aug_gamma100_z5_size256_iter_400000.pt'),map_location='cpu')        
-        model.load_state_dict(state['model_states']['net'])
-#         model = model.detach()
-        for param in model.parameters():
-            print(param, param.requires_grad)
-            param.requires_grad = False
-            
-        self.generative_model = model.to(self.device)
+        if not self.opt.generative:
+            brush_large_vertical = read_img('brush/brush_small_vertical.png', 'L').to(self.device)
+            brush_large_horizontal = read_img('brush/brush_small_horizontal.png', 'L').to(self.device)
+            self.meta_brushes = torch.cat(
+                [brush_large_vertical, brush_large_horizontal], dim=0)
+        else:
+            model = BetaVAE_B_256(z_dim=5, nc=1)       
+            run = 'strokes_aug_gamma100_z5_size256_maxiter_1e6'
+            epoch = 'last'    
+            state = torch.load(os.path.join('./strokes_aug_gamma100_z5_size256_iter_400000.pt'),map_location='cpu')        
+            model.load_state_dict(state['model_states']['net'])
+    #         model = model.detach()
+            for param in model.parameters():
+                print(param, param.requires_grad)
+                param.requires_grad = False
+                
+            self.generative_model = model.to(self.device)
         
         
         net_g = networks.Painter(self.d_shape, opt.used_strokes, opt.ngf,
@@ -181,7 +184,7 @@ class PainterModel(BaseModel):
         self.pred_param = None
         self.gt_decision = None
         self.pred_decision = None
-        self.patch_size = 64
+        self.patch_size = 256
         self.loss_pixel = torch.tensor(0., device=self.device)
         self.loss_gt = torch.tensor(0., device=self.device)
         self.loss_w = torch.tensor(0., device=self.device)
@@ -234,18 +237,20 @@ class PainterModel(BaseModel):
         b = param.shape[0]
 #         print(param[:,:-3].shape)
 #         with torch.no_grad():
-#         param_latent = (param[:,:5] / torch.norm(param[:,:5],dim=1).unsqueeze(1))*self.opt.sigma
-        img = self.generative_model.sample(param[:,:5]) ### this outputs bx3xHxW image
-        print(param[:,:5])
+        param_latent = (param[:,:5] / torch.norm(param[:,:5],dim=1).unsqueeze(1))*self.opt.sigma
+        img = self.generative_model.sample(param_latent) ### this outputs bx3xHxW image
+        # print(param[:,:5])
         img = T(img)
         img = img.repeat(1,3,1,1)
         # print(img.shape)
-        alphas = (img>0.15).float()
+        alphas = (img>0.1).float()
 #         img[img<0.3] = 0
         img = alphas*img
-        rgb = torch.sigmoid(param[:,5:8]).unsqueeze(2).unsqueeze(3)
+        rgb = (1+param[:,5:8]).unsqueeze(2).unsqueeze(3)/2
+        # print('rgb',rgb)
+        # if alpha
 #         print(img.device, rgb.device)
-        print(rgb)
+        # print(rgb)
         brush = img*rgb
     
         return brush, alphas
@@ -263,12 +268,7 @@ class PainterModel(BaseModel):
     #         foregrounds = morphology.Dilation2d(m=1)(foregrounds)
     #         alphas = morphology.Erosion2d(m=1)(alphas)
     #         foregrounds = foregrounds.view(self.opt.batch_size // 4, self.opt.used_strokes, 3, self.patch_size * 2,
-    #                                        self.patch_size * 2).contiguous()
-    #         alphas = alphas.view(self.opt.batch_size // 4, self.opt.used_strokes, 3, self.patch_size * 2,
-    #                              self.patch_size * 2).contiguous()
-    #         old = torch.zeros(self.opt.batch_size // 4, 3, self.patch_size * 2, self.patch_size * 2, device=self.device)
-    #         for i in range(self.opt.used_strokes):
-    #             foreground = foregrounds[:, i, :, :, :]
+    #                                        self.patch_size * 2).cparam[:,:5]
     #             alpha = alphas[:, i, :, :, :]
     #             old = foreground * alpha + old * (1 - alpha)
     #         old = old.view(self.opt.batch_size // 4, 3, 2, self.patch_size, 2, self.patch_size).contiguous()
@@ -302,41 +302,46 @@ class PainterModel(BaseModel):
     #         self.gt_decision = gt_decision
 
 
-    def set_input(self, input_dict):
+    def set_input(self, input_dict, background_stroke_times):
         self.image_paths = input_dict['A_paths']
+        stroke_num = 0 #np.random.randint(self.opt.used_strokes * background_stroke_times)
         with torch.no_grad():
-            if not self.opt.generative:
-                old_param = torch.rand(self.opt.batch_size, self.opt.used_strokes, self.d, device=self.device)
-                     # batch_size //4 because we are gonna create a background by drawing 4x larger images and splitting it to 4
-                old_param[:, :, :4] = old_param[:, :, :4] * 0.5 + 0.2
-                old_param[:, :, -4:-1] = old_param[:, :, -7:-4]
-            else:
-                old_param = torch.rand(self.opt.batch_size, self.opt.used_strokes, self.d, device=self.device)
-                old_param[:,:,:5] = -3 + torch.rand(self.opt.batch_size, self.opt.used_strokes, self.d_shape, device=self.device) * 6
-#                 old_param[:,:,:5] = self.opt.sigma * (old_param[:,:,:5] / torch.norm(old_param[:,:,:5], dim=2).unsqueeze(2))
-                     # batch_size //4 because we are gonna create a background by drawing 4x larger images and splitting it to 4
+#             if not self.opt.generative:
+#                 old_param = torch.rand(self.opt.batch_size, stroke_num, self.d, device=self.device)
+#                      # batch_size //4 because we are gonna create a background by drawing 4x larger images and splitting it to 4
 #                 old_param[:, :, :4] = old_param[:, :, :4] * 0.5 + 0.2
 #                 old_param[:, :, -4:-1] = old_param[:, :, -7:-4]
+#             else:
+#                 old_param = -1 + torch.rand(self.opt.batch_size, stroke_num, self.d, device=self.device) * 2
+#                 # old_param[:,:,:11] = -3 + torch.rand(self.opt.batch_size, self.opt.used_strokes, 11, device=self.device) * 6
+# #                 old_param[:,:,:5] = self.opt.sigma * (old_param[:,:,:5] / torch.norm(old_param[:,:,:5], dim=2).unsqueeze(2))
+#                      # batch_size //4 because we are gonna create a background by drawing 4x larger images and splitting it to 4
+# #                 old_param[:, :, :4] = old_param[:, :, :4] * 0.5 + 0.2
+# #                 old_param[:, :, -4:-1] = old_param[:, :, -7:-4]
 
-            old_param = old_param.view(-1, self.d).contiguous()
-            if not self.opt.generative:
-                foregrounds, alphas = self.param2stroke(old_param, self.patch_size, self.patch_size)
-                foregrounds = morphology.Dilation2d(m=1)(foregrounds)
-                alphas = morphology.Erosion2d(m=1)(alphas)
-            else:
-                foregrounds, alphas = self.latent2stroke(old_param, self.patch_size, self.patch_size)
+#             old_param = old_param.view(-1, self.d).contiguous()
+#             if not self.opt.generative:
+#                 foregrounds, alphas = self.param2stroke(old_param, self.patch_size, self.patch_size)
+#                 foregrounds = morphology.Dilation2d(m=1)(foregrounds)
+#                 alphas = morphology.Erosion2d(m=1)(alphas)
+#             else:
+#                 foregrounds, alphas = self.latent2stroke(old_param, self.patch_size, self.patch_size)
 
-            foregrounds = foregrounds.view(self.opt.batch_size, self.opt.used_strokes, 3, self.patch_size,
-                                           self.patch_size).contiguous()
-            alphas = alphas.view(self.opt.batch_size, self.opt.used_strokes, 3, self.patch_size,
-                                 self.patch_size).contiguous()
+#             foregrounds = foregrounds.view(self.opt.batch_size, stroke_num, 3, self.patch_size,
+#                                            self.patch_size).contiguous()
+#             alphas = alphas.view(self.opt.batch_size, stroke_num, 3, self.patch_size,
+#                                  self.patch_size).contiguous()
             old = torch.zeros(self.opt.batch_size, 3, self.patch_size, self.patch_size, device=self.device)
-            for i in range(self.opt.used_strokes):
-                foreground = foregrounds[:, i, :, :, :]
-                alpha = alphas[:, i, :, :, :]
-                old = foreground * alpha + old * (1 - alpha)
+#             for i in range(stroke_num):
+#                 foreground = foregrounds[:, i, :, :, :]
+#                 alpha = alphas[:, i, :, :, :]
+#                 old = foreground * alpha + old * (1 - alpha)
             # old = old.view(self.opt.batch_size, 3, self.patch_size, self.patch_size).contiguous()
             # old = old.permute(0, 2, 4, 1, 3, 5).contiguous()
+#             del old_param
+#             del foregrounds
+#             del alphas
+#             torch.cuda.empty_cache() 
             self.old = old.view(self.opt.batch_size, 3, self.patch_size, self.patch_size).contiguous()
             
             if not self.opt.generative:
@@ -344,8 +349,8 @@ class PainterModel(BaseModel):
                 gt_param[:, :, :4] = gt_param[:, :, :4] * 0.5 + 0.2
                 gt_param[:, :, -4:-1] = gt_param[:, :, -7:-4]
             else:
-                gt_param = torch.rand(self.opt.batch_size, self.opt.used_strokes, self.d, device=self.device)
-                gt_param[:,:,:5] = -3 + torch.rand(self.opt.batch_size, self.opt.used_strokes, self.d_shape, device=self.device) * 6
+                gt_param = -1 + torch.rand(self.opt.batch_size, self.opt.used_strokes, self.d, device=self.device) * 2
+                # gt_param[:,:,:11] = -3 + torch.rand(self.opt.batch_size, self.opt.used_strokes, 11, device=self.device) * 6
 #                 gt_param[:,:,:5] = self.opt.sigma * (gt_param[:,:,:5] / torch.norm(gt_param[:,:,:5], dim=2).unsqueeze(2))
 
             self.gt_param = gt_param[:, :, :self.d_shape]
@@ -369,7 +374,7 @@ class PainterModel(BaseModel):
                 for j in range(i):
                     iou = (torch.sum(alpha * alphas[:, j, :, :, :], dim=(-3, -2, -1)) + 1e-5) / (
                             torch.sum(alphas[:, j, :, :, :], dim=(-3, -2, -1)) + 1e-5)
-                    gt_decision[:, i] = ((iou < 0.3) | (~gt_decision[:, j].bool())).float() * gt_decision[:, i]
+                    gt_decision[:, i] = ((iou < 0.8) | (~gt_decision[:, j].bool())).float() * gt_decision[:, i]
                 decision = gt_decision[:, i].view(self.opt.batch_size, 1, 1, 1).contiguous()
                 self.render = foreground * alpha * decision + self.render * (1 - alpha * decision)
             self.gt_decision = gt_decision
@@ -381,6 +386,9 @@ class PainterModel(BaseModel):
 
     def forward(self):
         param, decisions = self.net_g(self.render, self.old)
+        # print(self.net_g.linear_param[0].weight)
+        # print('latent', param[:,:5])
+        # print('color', param[:,5:8])
 #         print(param.shape)
         # stroke_param: b, stroke_per_patch, param_per_stroke
         # decision: b, stroke_per_patch, 1
@@ -399,13 +407,15 @@ class PainterModel(BaseModel):
         alphas = alphas.view(-1, self.opt.used_strokes, 3, self.patch_size, self.patch_size)
         # foreground, alpha: b, stroke_per_patch, 3, output_size, output_size
         decisions = networks.SignWithSigmoidGrad.apply(decisions.view(-1, self.opt.used_strokes, 1, 1, 1).contiguous())
+        # print('decisions',decisions)
         self.rec = self.old.clone()
         for j in range(foregrounds.shape[1]):
             foreground = foregrounds[:, j, :, :, :]
             alpha = alphas[:, j, :, :, :]
             decision = decisions[:, j, :, :, :]
-            print((alpha==0).all())
-            self.rec = foreground * alpha + self.rec * (1 - alpha)
+            # print((alpha==0).all())
+            # print(foreground.shape, decision.shape, alpha.shape)
+            self.rec = foreground * alpha * decision + self.rec * (1 - alpha * decision)
 
     @staticmethod
     def get_sigma_sqrt(w, h, theta):
@@ -467,7 +477,7 @@ class PainterModel(BaseModel):
 #                 cost_matrix_w = self.gaussian_w_distance(pred_param_broad, valid_gt_param_broad)
                 decision = self.pred_decision[i]  # 8
                 cost_matrix_decision = (1 - decision).unsqueeze(-1).repeat(1, valid_gt_param.shape[0]) #  (8,?)
-                r, c = linear_sum_assignment((cost_matrix_l1 ).cpu()) # + cost_matrix_w +  + cost_matrix_decision
+                r, c = linear_sum_assignment((cost_matrix_l1 + cost_matrix_decision).cpu()) # + cost_matrix_w + 
                 r_idx.append(torch.tensor(r + self.pred_param.shape[1] * i, device=self.device))
                 c_idx.append(torch.tensor(c + cur_valid_gt_size, device=self.device))
                 cur_valid_gt_size += valid_gt_param.shape[0]
@@ -480,10 +490,13 @@ class PainterModel(BaseModel):
         all_pred_decision = self.pred_decision.view(-1).contiguous()
         paired_gt_param = all_valid_gt_param[c_idx, :]
         paired_pred_param = all_pred_param[r_idx, :]
+        # print(paired_pred_param.shape)
         self.loss_gt = self.criterion_pixel(paired_pred_param, paired_gt_param) * self.opt.lambda_gt
 #         self.loss_w = self.gaussian_w_distance(paired_pred_param, paired_gt_param).mean() * self.opt.lambda_w
         self.loss_decision = self.criterion_decision(all_pred_decision, paired_gt_decision) * self.opt.lambda_decision
         loss = self.loss_pixel + self.loss_gt + self.loss_decision # + self.loss_w 
         loss.backward()
+        self.optimizer.step()
+        self.optimizer.zero_grad()
 
         

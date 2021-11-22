@@ -550,33 +550,33 @@ def main(input_path, model_path, output_dir, generative = True, need_animation=F
     with torch.no_grad():
         original_img = read_img(input_path, 'RGB', resize_h, resize_w).to(device)  # 이미지 읽어옴
         original_h, original_w = original_img.shape[-2:]  # 이미지 shape checking
-        K = max(math.ceil(math.log2(max(original_h, original_w) / patch_size)), 0) 
-        original_img_pad_size = patch_size * (2 ** K)  
-        original_img_pad = pad(original_img, original_img_pad_size, original_img_pad_size)
+#         K = max(math.ceil(math.log2(max(original_h, original_w) / patch_size)), 0) 
+#         original_img_pad_size = patch_size * (2 ** K)  
+#         original_img_pad = pad(original_img, original_img_pad_size, original_img_pad_size)
         final_result = torch.zeros_like(original_img_pad).to(device)
-        print('here !!', K)
+#         print('here !!', K)
         for layer in range(0, K + 1):
-            layer_size = patch_size * (2 ** layer)
-            img = F.interpolate(original_img_pad, (layer_size, layer_size))
-            result = F.interpolate(final_result, (patch_size * (2 ** layer), patch_size * (2 ** layer)))
-            img_patch = F.unfold(img, (patch_size, patch_size), stride=(patch_size, patch_size))
-            result_patch = F.unfold(result, (patch_size, patch_size),
-                                    stride=(patch_size, patch_size))
-            # There are patch_num * patch_num patches in total
-            patch_num = (layer_size - patch_size) // patch_size + 1
+#             layer_size = patch_size * (2 ** layer)
+#             img = F.interpolate(original_img_pad, (layer_size, layer_size))
+#             result = F.interpolate(final_result, (patch_size * (2 ** layer), patch_size * (2 ** layer)))
+#             img_patch = F.unfold(img, (patch_size, patch_size), stride=(patch_size, patch_size))
+#             result_patch = F.unfold(result, (patch_size, patch_size),
+#                                     stride=(patch_size, patch_size))
+#             # There are patch_num * patch_num patches in total
+#             patch_num = (layer_size - patch_size) // patch_size + 1
 
             # img_patch, result_patch: b, 3 * output_size * output_size, h * w
-            img_patch = img_patch.permute(0, 2, 1).contiguous().view(-1, 3, patch_size, patch_size).contiguous()
-            result_patch = result_patch.permute(0, 2, 1).contiguous().view(
+            original_img = original_img.permute(0, 2, 1).contiguous().view(-1, 3, patch_size, patch_size).contiguous()
+            final_result = final_result.permute(0, 2, 1).contiguous().view(
                 -1, 3, patch_size, patch_size).contiguous()
-            stroke_param, stroke_decision = net_g(img_patch, result_patch)
+            stroke_param, stroke_decision = net_g(original_img, final_result)
             stroke_decision = network.SignWithSigmoidGrad.apply(stroke_decision)
 
-            # grid = shape_param[:, :, :2].view(img_patch.shape[0] * stroke_num, 1, 1, 2).contiguous()
-            # img_temp = img_patch.unsqueeze(1).contiguous().repeat(1, stroke_num, 1, 1, 1).view(
-            #     img_patch.shape[0] * stroke_num, 3, patch_size, patch_size).contiguous()
-            # color = F.grid_sample(img_temp, 2 * grid - 1, align_corners=False).view(
-            #     img_patch.shape[0], stroke_num, 3).contiguous()
+#             grid = shape_param[:, :, :2].view(original_img.shape[0] * stroke_num, 1, 1, 2).contiguous()
+#             img_temp = img_patch.unsqueeze(1).contiguous().repeat(1, stroke_num, 1, 1, 1).view(
+#                 img_patch.shape[0] * stroke_num, 3, patch_size, patch_size).contiguous()
+#             color = F.grid_sample(img_temp, 2 * grid - 1, align_corners=False).view(
+#                 img_patch.shape[0], stroke_num, 3).contiguous()
             # stroke_param = torch.cat([shape_param, color], dim=-1)
             # stroke_param: b * h * w, stroke_per_patch, param_per_stroke
             # stroke_decision: b * h * w, stroke_per_patch, 1
@@ -584,13 +584,33 @@ def main(input_path, model_path, output_dir, generative = True, need_animation=F
             decision = stroke_decision.view(1, patch_num, patch_num, stroke_num).contiguous().bool()
             # param: b, h, w, stroke_per_patch, 8
             # decision: b, h, w, stroke_per_patch
-            # param[..., :2] = param[..., :2] / 2 + 0.25
-            # param[..., 2:4] = param[..., 2:4] / 2
-            if serial:
-                final_result = param2img_serial(param, decision, generative_model, final_result,
-                                                frame_dir, False, original_h, original_w)
-            else:
-                final_result = param2img_parallel(param, decision, generative_model, final_result)
+            param[..., :2] = param[..., :2] / 2 + 0.25
+            param[..., 2:4] = param[..., 2:4] / 2
+#             if serial:
+#                 final_result = param2img_serial(param, decision, generative_model, final_result,
+#                                                 frame_dir, False, original_h, original_w)
+#             else:
+#                 final_result = param2img_parallel(param, decision, generative_model, final_result)
+            param = param.view(-1, 8).contiguous()
+            foregrounds, alphas = param2stroke(param, resize_h, resize_w, generative_model)
+
+            # foreground, alpha: b * stroke_per_patch, 3, output_size, output_size
+            foregrounds = foregrounds.view(-1, stroke_num, 3, resize_h, resize_w)
+            alphas = alphas.view(-1, stroke_num, 3, resize_h, resize_w)
+            # foreground, alpha: b, stroke_per_patch, 3, output_size, output_size
+            decisions = network.SignWithSigmoidGrad.apply(decisions.view(-1, stroke_num, 1, 1, 1).contiguous())
+            # print('decisions',decisions)
+            # self.rec = self.old.clone()
+            for j in range(foregrounds.shape[1]):
+                foreground = foregrounds[:, j, :, :, :]
+                alpha = alphas[:, j, :, :, :]
+                decision = decisions[:, j, :, :, :]
+                # print((alpha==0).all())
+                # print(foreground.shape, decision.shape, alpha.shape)
+                final_result = foreground * alpha * decision + final_result * (1 - alpha * decision)
+            if repeat%1 ==0:
+                save_img(final_result[0], frame_dir, "repeat_{:05d}.png".format(repeat))
+
 
         border_size = original_img_pad_size // (2 * patch_num)
         img = F.interpolate(original_img_pad, (patch_size * (2 ** layer), patch_size * (2 ** layer)))
@@ -636,7 +656,7 @@ def main(input_path, model_path, output_dir, generative = True, need_animation=F
 
 if __name__ == '__main__':
     main(input_path='../picture/2.jpg',
-         model_path='../train/checkpoints/painter_generative_GTstroke_8_background_24_GT_100_pix_10_iou_0.8/latest_net_g.pth',
+         model_path='model.pth',
          output_dir='output/',
          generative=True,
          need_animation=True,  # whether need intermediate results for animation.

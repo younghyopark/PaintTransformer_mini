@@ -515,8 +515,9 @@ def main(input_path, model_path, output_dir, generative = True, need_animation=F
         frame_dir = os.path.join(output_dir, input_name[:input_name.find('.')])
         if not os.path.exists(frame_dir):
             os.mkdir(frame_dir)
-    stroke_num = 32
+    stroke_num = 20
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    # device = "cpu"
     net_g = network.Painter(8, stroke_num, 256, 8, 3, 3).to(device)
     net_g.load_state_dict(torch.load(model_path))
     net_g.eval()
@@ -562,6 +563,7 @@ def main(input_path, model_path, output_dir, generative = True, need_animation=F
             # result_patch = result_patch.permute(0, 2, 1).contiguous().view(
             #     -1, 3, patch_size, patch_size).contiguous()
             # save_img(final_result[0], frame_dir, "input_result_{}.png".format(repeat))
+            
             param, decisions = net_g(original_img, final_result)
             # print(param.shape, decisions.shape)
             # print(self.net_g.linear_param[0].weight)
@@ -582,6 +584,7 @@ def main(input_path, model_path, output_dir, generative = True, need_animation=F
             decisions = network.SignWithSigmoidGrad.apply(decisions.view(-1, stroke_num, 1, 1, 1).contiguous())
             # print('decisions',decisions)
             # self.rec = self.old.clone()
+            # print(foregrounds.shape)
             for j in range(foregrounds.shape[1]):
                 foreground = foregrounds[:, j, :, :, :]
                 alpha = alphas[:, j, :, :, :]
@@ -637,11 +640,15 @@ def main(input_path, model_path, output_dir, generative = True, need_animation=F
 
 if __name__ == '__main__':
     main(input_path='../picture/naver.png',
-         model_path='../train/checkpoints/painter_generative_GTstroke_32_background_random_iou_0.8_100_10_10/latest_net_g.pth',
-         output_dir='output/new2/',
+         model_path='../train/checkpoints/painter_generative_GTstroke_20_background_upto100/latest_net_g.pth',
+         output_dir='output/painter_generative_GTstroke_20_background_upto100/',
          generative=True,
          need_animation=True,  # whether need intermediate results for animation.
-         resize_h=64,         # resize original input to this size. None means do not resize.
-         resize_w=64,         # resize original input to this size. None means do not resize.
-         repeat_num = 100,
+         resize_h=256,         # resize original input to this size. None means do not resize.
+         resize_w=256,         # resize original input to this size. None means do not resize.
+         repeat_num = 500,
          serial=True)          # if need animation, serial must be True.
+
+
+
+## delete 618th
