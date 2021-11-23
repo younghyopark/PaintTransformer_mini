@@ -357,7 +357,7 @@ class PainterModel(BaseModel):
     
     def latent2stroke2(self, param, H,W):
         # param: b, 10 (latent) + 3 (RGB)
-        trn_resize = torchvision.transforms.Resize([H+20,W+20])
+        trn_resize = torchvision.transforms.Resize([H+40,W+40])
         trn_crop= torchvision.transforms.CenterCrop([H,W])
         trn_ToPIL = torchvision.transforms.ToPILImage(mode='CMYK')
         trn_ToTensor = torchvision.transforms.ToTensor()
@@ -450,7 +450,7 @@ class PainterModel(BaseModel):
 
     def set_input(self, input_dict, background_stroke_times):
         self.image_paths = input_dict['A_paths']
-        stroke_num = np.random.randint(8,self.opt.used_strokes * background_stroke_times)
+        stroke_num = np.random.randint(1,self.opt.used_strokes * background_stroke_times)
         with torch.no_grad():
             if not self.opt.generative:
                 old_param = torch.rand(self.opt.batch_size, stroke_num, self.d, device=self.device)
@@ -479,12 +479,19 @@ class PainterModel(BaseModel):
                                  self.patch_size).contiguous()
             result_content_wc = torch.zeros(self.opt.batch_size, 4, self.patch_size, self.patch_size, device=self.device)
             result_alpha = torch.zeros(self.opt.batch_size, 1, self.patch_size, self.patch_size, device=self.device)
+            old_decision = torch.ones(self.opt.batch_size, self.opt.used_strokes, device=self.device)
+
             for i in range(stroke_num):
                 content_wc = foregrounds[:, i, :, :, :]
                 alpha = alphas[:, i, :, :, :]
+                for j in range(i):
+                    iou = (torch.sum(alpha * alphas[:, j, :, :, :], dim=(-3, -2, -1)) + 1e-5) / (
+                            torch.sum(alphas[:, j, :, :, :], dim=(-3, -2, -1)) + 1e-5)
+                    old_decision[:, i] = ((iou < 0.8) | (~old_decision[:, j].bool())).float() * old_decision[:, i]
+                decision = old_decision[:, i].view(self.opt.batch_size, 1, 1, 1).contiguous()
                 # binary = binaries[:,i,:,:,:]
                 # result_content_wc = (result_content_wc>1e-1).float()*(content_wc>1e-1).float()*content_wc * result_content_wc + content_wc * (1-(result_content_wc>1e-1).float()) + (1-(content_wc>1e-1).float()) * result_content_wc
-                result_content_wc = torch.clip(content_wc+ result_content_wc, torch.min(content_wc,result_content_wc),torch.max(content_wc,result_content_wc))
+                result_content_wc = torch.clip(content_wc*decision+ result_content_wc, torch.min(content_wc,result_content_wc),torch.max(content_wc,result_content_wc))
                 # result_alpha = 1 - (1-result_alpha)* (1-alpha)
                 old = result_content_wc
             # old = old.view(self.opt.batch_size, 3, self.patch_size, self.patch_size).contiguous()
