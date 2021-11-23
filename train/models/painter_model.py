@@ -479,7 +479,7 @@ class PainterModel(BaseModel):
                                  self.patch_size).contiguous()
             result_content_wc = torch.zeros(self.opt.batch_size, 4, self.patch_size, self.patch_size, device=self.device)
             result_alpha = torch.zeros(self.opt.batch_size, 1, self.patch_size, self.patch_size, device=self.device)
-            old_decision = torch.ones(self.opt.batch_size, self.opt.used_strokes, device=self.device)
+            old_decision = torch.ones(self.opt.batch_size, stroke_num, device=self.device)
 
             for i in range(stroke_num):
                 content_wc = foregrounds[:, i, :, :, :]
