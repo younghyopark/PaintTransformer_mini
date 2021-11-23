@@ -357,7 +357,8 @@ class PainterModel(BaseModel):
     
     def latent2stroke2(self, param, H,W):
         # param: b, 10 (latent) + 3 (RGB)
-        trn_resize = torchvision.transforms.Resize([H,W])
+        trn_resize = torchvision.transforms.Resize([H+20,W+20])
+        trn_crop= torchvision.transforms.CenterCrop([H,W])
         trn_ToPIL = torchvision.transforms.ToPILImage(mode='CMYK')
         trn_ToTensor = torchvision.transforms.ToTensor()
         b = param.shape[0]
@@ -366,7 +367,7 @@ class PainterModel(BaseModel):
         param_latent = (param[:,:5] / torch.norm(param[:,:5],dim=1).unsqueeze(1))*self.opt.sigma
         c = torch.zeros(param.shape[0]).cuda()
         orig_img = self.generative_model.sample(param_latent, c) ### this outputs bx1xHxW image
-        orig_img = trn_resize(orig_img)
+        orig_img = trn_crop(trn_resize(orig_img))
         matte = (orig_img>EPS).float()
         cmyk = matte.repeat(1,4,1,1)
         # print(param[:,:5])
