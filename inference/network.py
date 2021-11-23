@@ -70,7 +70,7 @@ class Painter(nn.Module):
             nn.ReLU(True),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(True),
-            nn.Linear(hidden_dim, 3),
+            nn.Linear(hidden_dim, 4),
             nn.Tanh()
             )
         self.linear_decider = nn.Linear(hidden_dim, 1)

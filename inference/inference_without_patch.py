@@ -12,7 +12,7 @@ import torchvision
 from tqdm import tqdm
 
 idx = 0
-
+EPS = 1e-1
 class View(nn.Module):
     def __init__(self, size):
         super(View, self).__init__()
@@ -118,12 +118,112 @@ class BetaVAE_B_256(nn.Module):
     def _decode(self, z):
         return self.decoder(z)
     
+class BetaVAE_B_256_Conditional(nn.Module):
+    """Model proposed in understanding beta-VAE paper(Burgess et al, arxiv:1804.03599, 2018)."""
+
+    def __init__(self, z_dim=3, c_dim = 4, nc=1):
+        super(BetaVAE_B_256_Conditional, self).__init__()
+        self.nc = nc
+        self.z_dim = z_dim
+        self.c_dim = c_dim
+        
+        self.embed_label = nn.Sequential(
+            nn.Linear(c_dim, 512),              # B, 256
+            nn.ReLU(True),
+            nn.Linear(512, 2048),                 # B, 256
+            nn.ReLU(True),
+            nn.Linear(2048, 256 *256),             # B, z_dim*2
+        )
+        self.embed_data = nn.Sequential(
+            nn.Conv2d(self.nc, self.nc, kernel_size=1)
+        )
+
+        self.conv_encoder = nn.Sequential(
+            nn.Conv2d(nc+1, 32, 4, 2, 1),          # B,  32, 32, 32
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32, 16, 16
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32,  8,  8
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32,  4,  4
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32,  4,  4
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32,  4,  4
+            nn.ReLU(True),
+            View((-1, 32*4*4)),                  # B, 512
+            nn.Linear(32*4*4, 256),              # B, 256
+            nn.ReLU(True),
+            nn.Linear(256, 256),                 # B, 256
+            nn.ReLU(True),
+            nn.Linear(256, z_dim*2),             # B, z_dim*2
+        )
+
+
+        self.decoder = nn.Sequential(
+            nn.Linear(z_dim+c_dim, 256),               # B, 256
+            nn.ReLU(True),
+            nn.Linear(256, 256),                 # B, 256
+            nn.ReLU(True),
+            nn.Linear(256, 32*4*4),              # B, 512
+            nn.ReLU(True),
+            View((-1, 32, 4, 4)),                # B,  32,  4,  4
+            nn.ConvTranspose2d(32, 32, 4, 2, 1), # B,  32,  8,  8
+            nn.ReLU(True),
+            nn.ConvTranspose2d(32, 32, 4, 2, 1), # B,  32, 16, 16
+            nn.ReLU(True),
+            nn.ConvTranspose2d(32, 32, 4, 2, 1), # B,  32, 32, 32
+            nn.ReLU(True),
+            nn.ConvTranspose2d(32, 32, 4, 2, 1), # B,  32, 32, 32
+            nn.ReLU(True),
+            nn.ConvTranspose2d(32, 32, 4, 2, 1), # B,  32, 32, 32
+            nn.ReLU(True),
+            nn.ConvTranspose2d(32, nc, 4, 2, 1), # B,  nc, 64, 64
+        )
+        self.weight_init()     
+        
+    def weight_init(self):
+        for block in self._modules:
+            for m in self._modules[block]:
+                kaiming_init(m)
+                
+    def forward(self, x, c):
+        # img_feature = self.conv_encoder(x)
+        # t = torch.cat((img_feature, c),dim=1)
+        distributions = self._encode(x,c)
+        mu = distributions[:, :self.z_dim]
+        logvar = distributions[:, self.z_dim:]
+        z = reparametrize(mu, logvar)
+        # t2 = torch.cat((z,c),dim=1)
+        x_recon = self._decode(z,c)
+
+        return x_recon, mu, logvar
     
+    def sample(self,z,c):
+        x_recon = self._decode(z,c)
+        x_recon = torch.sigmoid(x_recon)
+        return x_recon
+
+    def _encode(self, x, c):
+        c = F.one_hot(c.to(torch.int64), self.c_dim).float()
+        class_feature = self.embed_label(c)
+        class_feature = class_feature.reshape(-1,1,256,256)
+        img_feature = self.embed_data(x)
+        t = torch.cat((img_feature,class_feature),dim=1)
+        distributions = self.conv_encoder(t)
+        return distributions
+
+    def _decode(self, z,c):
+        c = F.one_hot(c.to(torch.int64), self.c_dim).float()
+#         print(z.shape,c.shape)
+        t = torch.cat((z,c),dim=1)
+        return self.decoder(t)
     
     
 
 def save_img(img, output_path, name):
-    result = Image.fromarray((img.data.cpu().numpy().transpose((1, 2, 0)) * 255).astype(np.uint8))
+    # print((img.data.cpu().numpy().transpose((1, 2, 0))).shape)
+    result = Image.fromarray((img.data.cpu().numpy().transpose((1, 2, 0)) * 255).astype(np.uint8), mode='CMYK').convert('RGB')
     result.save(os.path.join(output_path, name))
 
 
@@ -202,6 +302,53 @@ def latent2stroke(param, H,W, model):
     brush = img*rgb
 
     return brush, alphas
+
+
+def latent2stroke2(param, H,W, model):
+    # param: b, 10 (latent) + 3 (RGB)
+    trn_resize = torchvision.transforms.Resize([H,W])
+    trn_ToPIL = torchvision.transforms.ToPILImage(mode='CMYK')
+    trn_ToTensor = torchvision.transforms.ToTensor()
+    b = param.shape[0]
+#         print(param[:,:-3].shape)
+#         with torch.no_grad():
+    param_latent = (param[:,:5] / torch.norm(param[:,:5],dim=1).unsqueeze(1))*2
+    c = torch.zeros(param.shape[0])#.cuda()
+    orig_img = model.sample(param_latent, c) ### this outputs bx1xHxW image
+    orig_img = trn_resize(orig_img)
+    matte = (orig_img>EPS).float()
+    cmyk = matte.repeat(1,4,1,1)
+    # print(param[:,:5])
+    # batch = []
+    # for i in range(img.shape[0]):
+    #     cmyk = trn_resize(trn_ToTensor(trn_ToPIL(img[0]))).unsqueeze(0)
+    #     batch.append(cmyk)
+    # cmyk = torch.cat(batch,0).cuda()
+    # print(cmyk.shape)
+    # cmyk = trn_resize(trn_ToTensor((trn_ToPIL(img))))
+    
+    # img = img.repeat(1,3,1,1)
+    # content = (img>1e-1).float()
+    # content = content.repeat(1,3,1,1)
+    alpha = orig_img
+    binary = (orig_img>EPS).float()
+
+    # print(img.shape)
+    # alphas = (img>0.1).float()
+#         img[img<0.3] = 0
+    # img = alphas*img
+    color = (1+param[:,5:9]).unsqueeze(2).unsqueeze(3)/2
+    # aug_color = torch.ones(orig_img.shape[0],1,1,1).cuda()
+    # color = torch.cat([color, aug_color],1)
+    # print(color.shape)
+    # print('rgb',rgb)
+    # if alpha
+#         print(img.device, rgb.device)
+    # print(cmyk.shape, color.shape, alpha.shape)
+    matte_color = cmyk*color*alpha
+    # print(rgb)
+
+    return matte_color, alpha
 
 
 def param2img_serial(
@@ -515,9 +662,9 @@ def main(input_path, model_path, output_dir, generative = True, need_animation=F
         frame_dir = os.path.join(output_dir, input_name[:input_name.find('.')])
         if not os.path.exists(frame_dir):
             os.mkdir(frame_dir)
-    stroke_num = 20
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    # device = "cpu"
+    stroke_num = 8
+    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = "cpu"
     net_g = network.Painter(8, stroke_num, 256, 8, 3, 3).to(device)
     net_g.load_state_dict(torch.load(model_path))
     net_g.eval()
@@ -530,8 +677,8 @@ def main(input_path, model_path, output_dir, generative = True, need_animation=F
         meta_brushes = torch.cat(
             [brush_large_vertical, brush_large_horizontal], dim=0)
     else:
-        model = BetaVAE_B_256(z_dim=5, nc=1)       
-        state = torch.load(os.path.join('../train/strokes_aug_gamma100_z5_size256_iter_400000.pt'),map_location='cpu')        
+        model = BetaVAE_B_256_Conditional(z_dim=5, c_dim=2, nc=1)       
+        state = torch.load(os.path.join('../train/strokes_alpha_gamma100_z5_c2_size256_last.pt'),map_location='cpu')        
         model.load_state_dict(state['model_states']['net'])
         for param in model.parameters():
             print(param, param.requires_grad)
@@ -541,7 +688,7 @@ def main(input_path, model_path, output_dir, generative = True, need_animation=F
 
 
     with torch.no_grad():
-        original_img = read_img(input_path, 'RGB', resize_h, resize_w).to(device)  # 이미지 읽어옴
+        original_img = read_img(input_path, 'CMYK', resize_h, resize_w).to(device)  # 이미지 읽어옴
         # original_h, original_w = original_img.shape[-2:]  # 이미지 shape checking
         # K = max(math.ceil(math.log2(max(original_h, original_w) / patch_size)), 0) 
         # original_img_pad_size = patch_size * (2 ** K)  
@@ -574,12 +721,12 @@ def main(input_path, model_path, output_dir, generative = True, need_animation=F
             # decision: b, stroke_per_patch, 1
             # pred_decision = decisions.view(-1, stroke_num).contiguous()
             # pred_param = param[:, :, :8]
-            param = param.view(-1, 8).contiguous()
-            foregrounds, alphas = latent2stroke(param, resize_h, resize_w, generative_model)
+            param = param.view(-1, 9).contiguous()
+            foregrounds, alphas = latent2stroke2(param, resize_h, resize_w, generative_model)
 
             # foreground, alpha: b * stroke_per_patch, 3, output_size, output_size
-            foregrounds = foregrounds.view(-1, stroke_num, 3, resize_h, resize_w)
-            alphas = alphas.view(-1, stroke_num, 3, resize_h, resize_w)
+            foregrounds = foregrounds.view(-1, stroke_num, 4, resize_h, resize_w)
+            alphas = alphas.view(-1, stroke_num, 1, resize_h, resize_w)
             # foreground, alpha: b, stroke_per_patch, 3, output_size, output_size
             decisions = network.SignWithSigmoidGrad.apply(decisions.view(-1, stroke_num, 1, 1, 1).contiguous())
             # print('decisions',decisions)
@@ -591,7 +738,8 @@ def main(input_path, model_path, output_dir, generative = True, need_animation=F
                 decision = decisions[:, j, :, :, :]
                 # print((alpha==0).all())
                 # print(foreground.shape, decision.shape, alpha.shape)
-                final_result = foreground * alpha * decision + final_result * (1 - alpha * decision)
+                # self.rec_content_wc = torch.clip(content_wc*decision+ self.rec_content_wc, torch.min(content_wc,self.rec_content_wc),torch.max(content_wc,self.rec_content_wc))
+                final_result = torch.clip(foreground*decision + final_result, torch.min(foreground, final_result), torch.max(foreground, final_result))
             if repeat%1 ==0:
                 save_img(final_result[0], frame_dir, "repeat_{:05d}.png".format(repeat))
 
@@ -639,14 +787,14 @@ def main(input_path, model_path, output_dir, generative = True, need_animation=F
 
 
 if __name__ == '__main__':
-    main(input_path='../picture/naver.png',
-         model_path='../train/checkpoints/painter_generative_GTstroke_20_background_upto100/latest_net_g.pth',
-         output_dir='output/painter_generative_GTstroke_20_background_upto100/',
+    main(input_path='../picture/water_color.jpg',
+         model_path='../train/checkpoints/painter_generative_GTstroke_8_marker_CMYK_back_upto40_FINAL/latest_net_g.pth',
+         output_dir='output/painter_generative_GTstroke_8_marker_CMYK_back_upto40_FINAL/',
          generative=True,
          need_animation=True,  # whether need intermediate results for animation.
          resize_h=256,         # resize original input to this size. None means do not resize.
          resize_w=256,         # resize original input to this size. None means do not resize.
-         repeat_num = 500,
+         repeat_num = 50,
          serial=True)          # if need animation, serial must be True.
 
 
