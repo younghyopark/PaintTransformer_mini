@@ -5,7 +5,7 @@ import ntpath
 import time
 from . import util, html
 from subprocess import Popen, PIPE
-
+from PIL import Image
 
 if sys.version_info[0] == 2:
     VisdomExceptionBase = Exception
@@ -123,6 +123,7 @@ class Visualizer:
                 idx = 0
                 for label, image in visuals.items():
                     image_numpy = util.tensor2im(image)
+                    # print('1',image_numpy.shape)
                     label_html_row += '<td>%s</td>' % label
                     images.append(image_numpy.transpose([2, 0, 1]))
                     idx += 1
@@ -130,6 +131,7 @@ class Visualizer:
                         label_html += '<tr>%s</tr>' % label_html_row
                         label_html_row = ''
                 white_image = np.ones_like(image_numpy.transpose([2, 0, 1])) * 255
+                # print('2',white_image.shape)
                 while idx % ncols != 0:
                     images.append(white_image)
                     label_html_row += '<td></td>'
@@ -137,6 +139,13 @@ class Visualizer:
                 if label_html_row != '':
                     label_html += '<tr>%s</tr>' % label_html_row
                 try:
+                    for i in range(len(images)):
+                        # print('3',images[i].shape, type(images[i]))
+                        # if images[i].shape[0]==4:
+                        images[i] = np.array(Image.fromarray(np.array(images[i]).astype(np.uint8).transpose([1,2,0]),mode='CMYK').convert('RGB')).transpose([2,0,1])
+                    # for i in range(len(images)):
+                    # for i in range(len(images)):
+                        # print('4',images[i].shape, type(images[i]))
                     self.vis.images(images, nrow=ncols, win=self.display_id + 1,
                                     padding=2, opts=dict(title=title + ' images'))
                     label_html = '<table>%s</table>' % label_html

@@ -27,7 +27,7 @@ class Painter(nn.Module):
         super().__init__()
         self.enc_img = nn.Sequential(
             nn.ReflectionPad2d(1),
-            nn.Conv2d(3, 32, 3, 1),
+            nn.Conv2d(4, 32, 3, 1),
             nn.BatchNorm2d(32),
             nn.ReLU(True),
             nn.ReflectionPad2d(1),
@@ -42,7 +42,7 @@ class Painter(nn.Module):
             nn.ReLU(True))
         self.enc_canvas = nn.Sequential(
             nn.ReflectionPad2d(1),
-            nn.Conv2d(3, 32, 3, 1),
+            nn.Conv2d(4, 32, 3, 1),
             nn.BatchNorm2d(32),
             nn.ReLU(True),
             nn.ReflectionPad2d(1),
