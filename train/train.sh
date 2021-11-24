@@ -1,5 +1,5 @@
 python train.py \
---name painter_generative_GTstroke_32_marker_CMYK_back_upto96_crop40_details_with_pen \
+--name new_version_iter5_stroke10_gt30_pix50_dec10 \
 --gpu_ids 0 \
 --model painter \
 --dataset_mode null \
@@ -10,13 +10,13 @@ python train.py \
 --init_type normal \
 --n_epochs 200 \
 --n_epochs_decay 20 \
---max_dataset_size 16384 \
+--max_dataset_size 14400 \
 --save_epoch_freq 20 \
 --display_port 8092 \
---used_strokes 32 \
+--used_strokes 10 \
 --lambda_gt 30 \
 --lambda_decision 10 \
---lambda_pixel 10 \
+--lambda_pixel 50 \
+--inference_repeat_num 5 \
 --generative \
---details \
---multiply 3
+--revised

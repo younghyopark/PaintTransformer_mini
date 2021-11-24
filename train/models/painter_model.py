@@ -402,50 +402,79 @@ class PainterModel(BaseModel):
         return matte_color, binary
 
 
-    # def set_input(self, input_dict):
-    #     self.image_paths = input_dict['A_paths']
-    #     with torch.no_grad():
-    #         old_param = torch.rand(self.opt.batch_size // 4, self.opt.used_strokes, self.d, device=self.device)
-    #              # batch_size //4 because we are gonna create a background by drawing 4x larger images and splitting it to 4
-    #         old_param[:, :, :4] = old_param[:, :, :4] * 0.5 + 0.2
-    #         old_param[:, :, -4:-1] = old_param[:, :, -7:-4]
-    #         old_param = old_param.view(-1, self.d).contiguous()
-    #         foregrounds, alphas = self.param2stroke(old_param, self.patch_size * 2, self.patch_size * 2)
-    #         foregrounds = morphology.Dilation2d(m=1)(foregrounds)
-    #         alphas = morphology.Erosion2d(m=1)(alphas)
-    #         foregrounds = foregrounds.view(self.opt.batch_size // 4, self.opt.used_strokes, 3, self.patch_size * 2,
-    #                                        self.patch_size * 2).cparam[:,:5]
-    #             alpha = alphas[:, i, :, :, :]
-    #             old = foreground * alpha + old * (1 - alpha)
-    #         old = old.view(self.opt.batch_size // 4, 3, 2, self.patch_size, 2, self.patch_size).contiguous()
-    #         old = old.permute(0, 2, 4, 1, 3, 5).contiguous()
-    #         self.old = old.view(self.opt.batch_size, 3, self.patch_size, self.patch_size).contiguous()
+    def set_input2(self, input_dict, background_stroke_times = None):
+        """
+        Training data creation code for PaintTransformer_mini_v3 (revised version).
+        """
+        self.image_paths = input_dict['A_paths']
+        with torch.no_grad():
+            if not self.opt.generative:
+                gt_param = torch.rand(self.opt.batch_size, self.opt.used_strokes, self.opt.inference_repeat_num, self.d, device=self.device)
+                gt_param[:, :, :4] = gt_param[:, :, :4] * 0.5 + 0.2
+                gt_param[:, :, -4:-1] = gt_param[:, :, -7:-4]
+            else:
+                gt_param = -1 + torch.rand(self.opt.batch_size, self.opt.used_strokes, self.opt.inference_repeat_num, self.d, device=self.device) * 2
 
-    #         gt_param = torch.rand(self.opt.batch_size, self.opt.used_strokes, self.d, device=self.device)
-    #         gt_param[:, :, :4] = gt_param[:, :, :4] * 0.5 + 0.2
-    #         gt_param[:, :, -4:-1] = gt_param[:, :, -7:-4]
-    #         self.gt_param = gt_param[:, :, :self.d_shape]
-    #         gt_param = gt_param.view(-1, self.d).contiguous()
-    #         foregrounds, alphas = self.param2stroke(gt_param, self.patch_size, self.patch_size)
-    #         foregrounds = morphology.Dilation2d(m=1)(foregrounds)
-    #         alphas = morphology.Erosion2d(m=1)(alphas)
-    #         foregrounds = foregrounds.view(self.opt.batch_size, self.opt.used_strokes, 3, self.patch_size,
-    #                                        self.patch_size).contiguous()
-    #         alphas = alphas.view(self.opt.batch_size, self.opt.used_strokes, 3, self.patch_size,
-    #                              self.patch_size).contiguous()
-    #         self.render = self.old.clone()
-    #         gt_decision = torch.ones(self.opt.batch_size, self.opt.used_strokes, device=self.device)
+            gt_param = gt_param.view(-1, self.d).contiguous() ## b x used_strokes x repeat_num  strokes will be rendered. 
+            if not self.opt.generative:
+                foregrounds, alphas = self.param2stroke(gt_param, self.patch_size, self.patch_size)
+                foregrounds = morphology.Dilation2d(m=1)(foregrounds)
+                alphas = morphology.Erosion2d(m=1)(alphas)
+            else:
+                foregrounds, alphas = self.latent2stroke2(gt_param, self.patch_size, self.patch_size)
+            # elif : 
+            foregrounds = foregrounds.view(self.opt.batch_size, self.opt.inference_repeat_num, self.opt.used_strokes, 4, self.patch_size,
+                                           self.patch_size).contiguous()
+            alphas = alphas.view(self.opt.batch_size, self.opt.inference_repeat_num, self.opt.used_strokes, 1, self.patch_size,
+                                 self.patch_size).contiguous()
+            result_content_wc = torch.zeros(self.opt.batch_size, 1+self.opt.inference_repeat_num, 4, self.patch_size, self.patch_size, device=self.device)
+            gt_decision = torch.ones(self.opt.batch_size, 1+self.opt.inference_repeat_num, self.opt.used_strokes, device=self.device)
 
-    #         for i in range(self.opt.used_strokes):
-    #             foreground = foregrounds[:, i, :, :, :]
-    #             alpha = alphas[:, i, :, :, :]
-    #             for j in range(i):
-    #                 iou = (torch.sum(alpha * alphas[:, j, :, :, :], dim=(-3, -2, -1)) + 1e-5) / (
-    #                         torch.sum(alphas[:, j, :, :, :], dim=(-3, -2, -1)) + 1e-5)
-    #                 gt_decision[:, i] = ((iou < 0.75) | (~gt_decision[:, j].bool())).float() * gt_decision[:, i]
-    #             decision = gt_decision[:, i].view(self.opt.batch_size, 1, 1, 1).contiguous()
-    #             self.render = foreground * alpha * decision + self.render * (1 - alpha * decision)
-    #         self.gt_decision = gt_decision
+            for j in range(1,self.opt.inference_repeat_num):
+                for i in range(self.opt.used_strokes):
+                    content_wc = foregrounds[:, j,i, :, :, :]  # shape b x 4 x 256 x 256 
+                    alpha = alphas[:, j,i, :, :, :]  # shape b x 1 x 256 x 256 
+                    for k in range(i):
+                        iou = (torch.sum(alpha * alphas[:, j,k,:, :, :], dim=(-3, -2, -1)) + 1e-5) / (
+                                torch.sum(alphas[:, j,k, :, :, :], dim=(-3, -2, -1)) + 1e-5)
+                        gt_decision[:, j,i] = ((iou < 0.8) | (~gt_decision[:, j,k].bool())).float() * gt_decision[:, j,i]
+                    decision = gt_decision[:, j,i].view(self.opt.batch_size, 1, 1, 1).contiguous() # shape b x 1 x 1 x 1
+                    result_content_wc [:,j,:,:,:] = torch.clip(content_wc*decision+ result_content_wc[:,j,:,:,:], torch.min(content_wc,result_content_wc[:,j,:,:,:]),torch.max(content_wc,result_content_wc[:,j,:,:,:]))
+                    # old = result_content_wc
+                result_content_wc[:,j+1,:,:,:] = result_content_wc[:,j,:,:,:]
+            # self.render = result_content_wc.view(self.opt.batch_size, self.opt.inference_repeat_num, 4, self.patch_size, self.patch_size).contiguous()
+            # self.old_content_wc = result_content_wc.clone()
+            # self.old_alpha = result_alpha.clone()
+            
+            gt_param = gt_param.view(self.opt.batch_size, self.opt.used_strokes, self.opt.inference_repeat_num, self.d).contiguous()
+
+            new_batch_size = self.opt.batch_size * (self.opt.inference_repeat_num)*(self.opt.inference_repeat_num-1)//2
+            self.gt_param = torch.zeros(new_batch_size, self.opt.used_strokes, self.d, device=self.device)
+            self.old = torch.zeros(new_batch_size, 4, self.patch_size, self.patch_size, device=self.device)
+            self.render = torch.zeros(new_batch_size, 4, self.patch_size, self.patch_size, device=self.device)
+
+            _idx = 0
+            for b in range(self.opt.batch_size):
+                for i in range(self.opt.inference_repeat_num):
+                    for j in range(i+1, self.opt.inference_repeat_num):
+                        self.gt_param[_idx, :,:] = gt_param[b, :,i,:]
+                        self.old[_idx,:,:,:] = result_content_wc[b,i,:,:,:]
+                        self.render[_idx,:,:,:] = result_content_wc[b,j,:,:,:]
+                        _idx+=1 
+
+            if self.opt.debug:
+                torch.save(self.gt_param, './gt_param_debug.pth')
+                torch.save(self.old, './old.pth')
+                torch.save(self.render, './render.pth')
+
+            """
+            render-bf = b x T x img   0, 1, ... , T-1 
+            gt param = b x T x n x param    0,1, ..., T-1
+
+            old    =  b x ( 0, 0, ...,  0, 1, 1, ...,   1, 2, 2, ...,   2, ) x img         = (bx(Tx(T-1))//2) x img
+            render =  b x ( 1, 2, ... T-1, 2, 3, ..., T-1, 3, 4, ..., T-1, ) x img         = (bx(Tx(T-1))//2) x img
+            gt_param= b x ( 0, 0, ...,  0, 1, 1, ...,   1, 2, 2, ...,   2, ) x n x param   = (bx(Tx(T-1))//2) x n x param
+            """
 
 
     def set_input(self, input_dict, background_stroke_times):

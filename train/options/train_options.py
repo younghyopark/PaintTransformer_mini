@@ -27,10 +27,14 @@ class TrainOptions(BaseOptions):
                             help='frequency of saving training results to html')
         parser.add_argument('--print_freq', type=int, default=10,
                             help='frequency of showing training results on console')
+        parser.add_argument('--inference_repeat_num', type=int, default=10,
+                            help='frequency of showing training results on console')
         parser.add_argument('--no_html', action='store_true',
                             help='do not save intermediate training results to [opt.checkpoints_dir]/[opt.name]/web/')
         parser.add_argument('--generative', action='store_true')
         parser.add_argument('--details', action='store_true')
+        parser.add_argument('--revised', action='store_true')
+        parser.add_argument('--debug', action='store_true')
 
 
         # network saving and loading parameters
