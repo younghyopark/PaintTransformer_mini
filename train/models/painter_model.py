@@ -452,12 +452,14 @@ class PainterModel(BaseModel):
             self.gt_param = torch.zeros(new_batch_size, self.opt.used_strokes, self.d, device=self.device)
             self.old = torch.zeros(new_batch_size, 4, self.patch_size, self.patch_size, device=self.device)
             self.render = torch.zeros(new_batch_size, 4, self.patch_size, self.patch_size, device=self.device)
+            self.gt_decision = torch.ones(new_batch_size, self.opt.used_strokes, device=self.device)
 
             _idx = 0
             for b in range(self.opt.batch_size):
                 for i in range(self.opt.inference_repeat_num):
                     for j in range(i+1, self.opt.inference_repeat_num):
                         self.gt_param[_idx, :,:] = gt_param[b, :,i,:]
+                        self.gt_decision[_idx,:] = gt_decision[b, i, :]
                         self.old[_idx,:,:,:] = result_content_wc[b,i,:,:,:]
                         self.render[_idx,:,:,:] = result_content_wc[b,j,:,:,:]
                         _idx+=1 
