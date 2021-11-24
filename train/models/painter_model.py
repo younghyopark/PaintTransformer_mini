@@ -613,8 +613,8 @@ class PainterModel(BaseModel):
         decisions = networks.SignWithSigmoidGrad.apply(decisions.view(-1, self.opt.used_strokes, 1, 1, 1).contiguous())
         # print('decisions',decisions)
         self.rec = self.old.clone()
-        self.rec_content_wc = self.old_content_wc.clone()
-        self.rec_alpha = self.old_alpha.clone()
+        self.rec_content_wc = self.old.clone()
+        # self.rec_alpha = self.old_alpha.clone()
         
         # for j in range(foregrounds.shape[1]):
         #     foreground = foregrounds[:, j, :, :, :]
