@@ -11,7 +11,8 @@ import torch.nn.init as init
 import os
 import torchvision
 
-EPS = 1e-1
+EPS1 = 1e-1
+EPS2 = 1e-1
 
 class View(nn.Module):
     def __init__(self, size):
@@ -383,13 +384,20 @@ class PainterModel(BaseModel):
             c = torch.ones(param.shape[0]).cuda()   ## pen
             orig_img = self.generative_model_details.sample(param_latent, c) ### this outputs bx1xHxW image
         orig_img = trn_crop(trn_resize(orig_img))
+        if not details: 
+            EPS = EPS1
+        else:
+            EPS = EPS2
         matte = (orig_img>EPS).float()
         cmyk = matte.repeat(1,4,1,1)
         alpha = orig_img
         binary = (orig_img>EPS).float()
 
         color = (1+param[:,5:9]).unsqueeze(2).unsqueeze(3)/2
-        matte_color = cmyk*color*alpha
+        if not details:
+            matte_color = cmyk*color*alpha
+        else:
+            matte_color = cmyk*color
     
         return matte_color, binary
 
@@ -566,7 +574,9 @@ class PainterModel(BaseModel):
             alphas = morphology.Erosion2d(m=1)(alphas)
         else:
             foregrounds, alphas = self.latent2stroke2(param, self.patch_size, self.patch_size, self.opt.details)
-
+            if self.opt.details:
+                foregrounds = morphology.Dilation2d(m=1)(foregrounds)
+                alphas = morphology.Erosion2d(m=1)(alphas)
         # foreground, alpha: b * stroke_per_patch, 3, output_size, output_size
         foregrounds = foregrounds.view(-1, self.opt.used_strokes, 4, self.patch_size, self.patch_size)
         alphas = alphas.view(-1, self.opt.used_strokes, 1, self.patch_size, self.patch_size)
