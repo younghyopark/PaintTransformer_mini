@@ -272,6 +272,17 @@ class PainterModel(BaseModel):
                 param.requires_grad = False
                 
             self.generative_model = model.to(self.device)
+
+            if self.opt.details:
+                model = BetaVAE_B_256_Conditional(z_dim=5, c_dim = 3, nc=1)       
+                state = torch.load(os.path.join('./strokes_alpha_small_gamma100_z5_c3_size256_last.pt'),map_location='cpu')        
+                model.load_state_dict(state['model_states']['net'])
+        #         model = model.detach()
+                for param in model.parameters():
+                    print(param, param.requires_grad)
+                    param.requires_grad = False
+                    
+                self.generative_model_details = model.to(self.device)
         
         
         net_g = networks.Painter(self.d_shape, opt.used_strokes, opt.ngf,
@@ -355,7 +366,7 @@ class PainterModel(BaseModel):
     
         return brush, alphas
     
-    def latent2stroke2(self, param, H,W):
+    def latent2stroke2(self, param, H,W, details=False):
         # param: b, 10 (latent) + 3 (RGB)
         trn_resize = torchvision.transforms.Resize([H+40,W+40])
         trn_crop= torchvision.transforms.CenterCrop([H,W])
@@ -365,41 +376,22 @@ class PainterModel(BaseModel):
 #         print(param[:,:-3].shape)
 #         with torch.no_grad():
         param_latent = (param[:,:5] / torch.norm(param[:,:5],dim=1).unsqueeze(1))*self.opt.sigma
-        c = torch.zeros(param.shape[0]).cuda()
-        orig_img = self.generative_model.sample(param_latent, c) ### this outputs bx1xHxW image
+        if not details:
+            c = torch.zeros(param.shape[0]).cuda()
+            orig_img = self.generative_model.sample(param_latent, c) ### this outputs bx1xHxW image
+        else:
+            c = torch.ones(param.shape[0]).cuda()   ## pen
+            orig_img = self.generative_model_details.sample(param_latent, c) ### this outputs bx1xHxW image
         orig_img = trn_crop(trn_resize(orig_img))
         matte = (orig_img>EPS).float()
         cmyk = matte.repeat(1,4,1,1)
-        # print(param[:,:5])
-        # batch = []
-        # for i in range(img.shape[0]):
-        #     cmyk = trn_resize(trn_ToTensor(trn_ToPIL(img[0]))).unsqueeze(0)
-        #     batch.append(cmyk)
-        # cmyk = torch.cat(batch,0).cuda()
-        # print(cmyk.shape)
-        # cmyk = trn_resize(trn_ToTensor((trn_ToPIL(img))))
-        
-        # img = img.repeat(1,3,1,1)
-        # content = (img>1e-1).float()
-        # content = content.repeat(1,3,1,1)
         alpha = orig_img
         binary = (orig_img>EPS).float()
 
-        # print(img.shape)
-        # alphas = (img>0.1).float()
-#         img[img<0.3] = 0
-        # img = alphas*img
         color = (1+param[:,5:9]).unsqueeze(2).unsqueeze(3)/2
-        # aug_color = torch.ones(orig_img.shape[0],1,1,1).cuda()
-        # color = torch.cat([color, aug_color],1)
-        # print(color.shape)
-        # print('rgb',rgb)
-        # if alpha
-#         print(img.device, rgb.device)
         matte_color = cmyk*color*alpha
-        # print(rgb)
     
-        return matte_color, alpha
+        return matte_color, binary
 
 
     # def set_input(self, input_dict):
@@ -520,7 +512,7 @@ class PainterModel(BaseModel):
                 foregrounds = morphology.Dilation2d(m=1)(foregrounds)
                 alphas = morphology.Erosion2d(m=1)(alphas)
             else:
-                foregrounds, alphas = self.latent2stroke2(gt_param, self.patch_size, self.patch_size)
+                foregrounds, alphas = self.latent2stroke2(gt_param, self.patch_size, self.patch_size, self.opt.details)
             foregrounds = foregrounds.view(self.opt.batch_size, self.opt.used_strokes, 4, self.patch_size,
                                            self.patch_size).contiguous()
             alphas = alphas.view(self.opt.batch_size, self.opt.used_strokes, 1, self.patch_size,
@@ -540,9 +532,14 @@ class PainterModel(BaseModel):
                 decision = gt_decision[:, i].view(self.opt.batch_size, 1, 1, 1).contiguous()
                 # print(decision.shape)
                 # if decision ==1 : 
-                self.content_wc = torch.clip(content_wc*decision+ self.content_wc, torch.min(content_wc,self.content_wc),torch.max(content_wc,self.content_wc))
-                # self.alpha = 1 - (1-self.alpha)* (1-alpha*decision)
-                self.render = self.content_wc
+                if not self.opt.details:
+                    self.content_wc = torch.clip(content_wc*decision+ self.content_wc, torch.min(content_wc,self.content_wc),torch.max(content_wc,self.content_wc))
+                    # self.alpha = 1 - (1-self.alpha)* (1-alpha*decision)
+                    self.render = self.content_wc
+                else:
+                    self.content_wc = self.content_wc * (1-alpha*decision) + content_wc *decision
+                    # self.alpha = 1 - (1-self.alpha)* (1-alpha*decision)
+                    self.render = self.content_wc
 
                 # self.render = foreground * alpha * decision + self.render * (1 - alpha * decision)
             self.gt_decision = gt_decision
@@ -568,7 +565,7 @@ class PainterModel(BaseModel):
             foregrounds = morphology.Dilation2d(m=1)(foregrounds)
             alphas = morphology.Erosion2d(m=1)(alphas)
         else:
-            foregrounds, alphas = self.latent2stroke2(param, self.patch_size, self.patch_size)
+            foregrounds, alphas = self.latent2stroke2(param, self.patch_size, self.patch_size, self.opt.details)
 
         # foreground, alpha: b * stroke_per_patch, 3, output_size, output_size
         foregrounds = foregrounds.view(-1, self.opt.used_strokes, 4, self.patch_size, self.patch_size)
@@ -598,9 +595,13 @@ class PainterModel(BaseModel):
             # decision = gt_decision[:, i].view(self.opt.batch_size, 1, 1, 1).contiguous()
             # print(decision.shape)
             # if decision ==1 : 
-            self.rec_content_wc = torch.clip(content_wc*decision+ self.rec_content_wc, torch.min(content_wc,self.rec_content_wc),torch.max(content_wc,self.rec_content_wc))
-            # self.rec_alpha = 1 - (1-self.rec_alpha)* (1-alpha*decision)
-            self.rec = self.rec_content_wc
+            if not self.opt.details:
+                self.rec_content_wc = torch.clip(content_wc*decision+ self.rec_content_wc, torch.min(content_wc,self.rec_content_wc),torch.max(content_wc,self.rec_content_wc))
+                # self.rec_alpha = 1 - (1-self.rec_alpha)* (1-alpha*decision)
+                self.rec = self.rec_content_wc
+            else:
+                self.rec_content_wc = self.rec_content_wc * (1-alpha*decision) + decision * content_wc
+                self.rec = self.rec_content_wc
 
     @staticmethod
     def get_sigma_sqrt(w, h, theta):

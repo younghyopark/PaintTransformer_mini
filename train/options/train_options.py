@@ -10,6 +10,8 @@ class TrainOptions(BaseOptions):
     def initialize(self, parser):
         parser = BaseOptions.initialize(self, parser)
         # visdom and HTML visualization parameters
+        parser.add_argument('--multiply', type=int, default=1,
+                            help='frequency of showing training results on screen')
         parser.add_argument('--display_freq', type=int, default=40,
                             help='frequency of showing training results on screen')
         parser.add_argument('--display_ncols', type=int, default=4,
@@ -28,6 +30,7 @@ class TrainOptions(BaseOptions):
         parser.add_argument('--no_html', action='store_true',
                             help='do not save intermediate training results to [opt.checkpoints_dir]/[opt.name]/web/')
         parser.add_argument('--generative', action='store_true')
+        parser.add_argument('--details', action='store_true')
 
 
         # network saving and loading parameters

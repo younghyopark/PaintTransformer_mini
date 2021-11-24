@@ -1,9 +1,9 @@
 python train.py \
---name painter_generative_GTstroke_32_marker_CMYK_back_upto96_crop40 \
---gpu_ids 7 \
+--name painter_generative_GTstroke_32_marker_CMYK_back_upto96_crop40_details_with_pen \
+--gpu_ids 0 \
 --model painter \
 --dataset_mode null \
---batch_size 32 \
+--batch_size 8 \
 --display_freq 25 \
 --print_freq 25 \
 --lr 1e-4 \
@@ -12,9 +12,11 @@ python train.py \
 --n_epochs_decay 20 \
 --max_dataset_size 16384 \
 --save_epoch_freq 20 \
---display_port 8080 \
+--display_port 8092 \
 --used_strokes 32 \
 --lambda_gt 30 \
 --lambda_decision 10 \
 --lambda_pixel 10 \
---generative
+--generative \
+--details \
+--multiply 3

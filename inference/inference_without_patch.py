@@ -651,7 +651,7 @@ def crop(img, h, w):
 
 def main(input_path, model_path, output_dir, generative = True, need_animation=False, resize_h=None, resize_w=None, repeat_num = 10, serial=False):
     if not os.path.exists(output_dir):
-        os.mkdir(output_dir)
+        os.makedirs(output_dir)
     input_name = os.path.basename(input_path)
     output_path = os.path.join(output_dir, input_name)
     frame_dir = None
@@ -661,7 +661,7 @@ def main(input_path, model_path, output_dir, generative = True, need_animation=F
             serial = True
         frame_dir = os.path.join(output_dir, input_name[:input_name.find('.')])
         if not os.path.exists(frame_dir):
-            os.mkdir(frame_dir)
+            os.makedirs(frame_dir)
     stroke_num = 8
     # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     device = "cpu"
@@ -787,16 +787,15 @@ def main(input_path, model_path, output_dir, generative = True, need_animation=F
 
 
 if __name__ == '__main__':
-    main(input_path='../picture/water_color.jpg',
-         model_path='../train/checkpoints/painter_generative_GTstroke_8_marker_CMYK_back_upto40_FINAL/latest_net_g.pth',
-         output_dir='output/painter_generative_GTstroke_8_marker_CMYK_back_upto40_FINAL/',
-         generative=True,
-         need_animation=True,  # whether need intermediate results for animation.
-         resize_h=256,         # resize original input to this size. None means do not resize.
-         resize_w=256,         # resize original input to this size. None means do not resize.
-         repeat_num = 50,
-         serial=True)          # if need animation, serial must be True.
-
-
+    for i in ['1','2','3','starry_night','gradient','ocean']:
+        main(input_path='../picture/{}.jpg'.format(i),
+            model_path='../train/checkpoints/painter_generative_GTstroke_8_marker_CMYK_back_upto40_FINAL/latest_net_g.pth',
+            output_dir='output/painter_generative_GTstroke_8_marker_CMYK_back_upto40/last',
+            generative=True,
+            need_animation=True,  # whether need intermediate results for animation.
+            resize_h=256,         # resize original input to this size. None means do not resize.
+            resize_w=256,         # resize original input to this size. None means do not resize.
+            repeat_num = 100,
+            serial=True)          # if need animation, serial must be True.
 
 ## delete 618th
