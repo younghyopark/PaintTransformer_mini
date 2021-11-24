@@ -574,9 +574,9 @@ class PainterModel(BaseModel):
             alphas = morphology.Erosion2d(m=1)(alphas)
         else:
             foregrounds, alphas = self.latent2stroke2(param, self.patch_size, self.patch_size, self.opt.details)
-            if self.opt.details:
-                foregrounds = morphology.Dilation2d(m=1)(foregrounds)
-                alphas = morphology.Erosion2d(m=1)(alphas)
+            # if self.opt.details:
+            #     foregrounds = morphology.Dilation2d(m=1)(foregrounds)
+            #     alphas = morphology.Erosion2d(m=1)(alphas)
         # foreground, alpha: b * stroke_per_patch, 3, output_size, output_size
         foregrounds = foregrounds.view(-1, self.opt.used_strokes, 4, self.patch_size, self.patch_size)
         alphas = alphas.view(-1, self.opt.used_strokes, 1, self.patch_size, self.patch_size)
