@@ -244,7 +244,7 @@ class PainterModel(BaseModel):
     def __init__(self, opt):
         BaseModel.__init__(self, opt)
         self.loss_names = ['pixel', 'gt', 'decision']
-        self.visual_names = ['old', 'render', 'rec']
+        self.visual_names = ['old', 'render', 'immediate_next','rec']
         self.model_names = ['g']
         self.d = 9  # latent 5 + rgb 3
         self.d_shape = 9
