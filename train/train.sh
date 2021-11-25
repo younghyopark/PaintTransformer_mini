@@ -3,7 +3,7 @@ python train.py \
 --gpu_ids 0 \
 --model painter \
 --dataset_mode null \
---batch_size 8 \
+--batch_size 64 \
 --display_freq 25 \
 --print_freq 25 \
 --lr 1e-4 \

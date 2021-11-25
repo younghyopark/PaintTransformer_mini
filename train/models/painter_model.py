@@ -409,11 +409,11 @@ class PainterModel(BaseModel):
         self.image_paths = input_dict['A_paths']
         with torch.no_grad():
             if not self.opt.generative:
-                gt_param = torch.rand(self.opt.batch_size, self.opt.used_strokes, self.opt.inference_repeat_num, self.d, device=self.device)
+                gt_param = torch.rand(self.opt.fake_batch_size, self.opt.used_strokes, self.opt.inference_repeat_num, self.d, device=self.device)
                 gt_param[:, :, :4] = gt_param[:, :, :4] * 0.5 + 0.2
                 gt_param[:, :, -4:-1] = gt_param[:, :, -7:-4]
             else:
-                gt_param = -1 + torch.rand(self.opt.batch_size, self.opt.used_strokes, self.opt.inference_repeat_num, self.d, device=self.device) * 2
+                gt_param = -1 + torch.rand(self.opt.fake_batch_size, self.opt.used_strokes, self.opt.inference_repeat_num, self.d, device=self.device) * 2
 
             gt_param = gt_param.view(-1, self.d).contiguous() ## b x used_strokes x repeat_num  strokes will be rendered. 
             if not self.opt.generative:
@@ -423,12 +423,12 @@ class PainterModel(BaseModel):
             else:
                 foregrounds, alphas = self.latent2stroke2(gt_param, self.patch_size, self.patch_size)
             # elif : 
-            foregrounds = foregrounds.view(self.opt.batch_size, self.opt.inference_repeat_num, self.opt.used_strokes, 4, self.patch_size,
+            foregrounds = foregrounds.view(self.opt.fake_batch_size, self.opt.inference_repeat_num, self.opt.used_strokes, 4, self.patch_size,
                                            self.patch_size).contiguous()
-            alphas = alphas.view(self.opt.batch_size, self.opt.inference_repeat_num, self.opt.used_strokes, 1, self.patch_size,
+            alphas = alphas.view(self.opt.fake_batch_size, self.opt.inference_repeat_num, self.opt.used_strokes, 1, self.patch_size,
                                  self.patch_size).contiguous()
-            result_content_wc = torch.zeros(self.opt.batch_size, 1+self.opt.inference_repeat_num, 4, self.patch_size, self.patch_size, device=self.device)
-            gt_decision = torch.ones(self.opt.batch_size, 1+self.opt.inference_repeat_num, self.opt.used_strokes, device=self.device)
+            result_content_wc = torch.zeros(self.opt.fake_batch_size, 1+self.opt.inference_repeat_num, 4, self.patch_size, self.patch_size, device=self.device)
+            gt_decision = torch.ones(self.opt.fake_batch_size, 1+self.opt.inference_repeat_num, self.opt.used_strokes, device=self.device)
 
             for j in range(1,self.opt.inference_repeat_num):
                 for i in range(self.opt.used_strokes):
@@ -438,7 +438,7 @@ class PainterModel(BaseModel):
                         iou = (torch.sum(alpha * alphas[:, j,k,:, :, :], dim=(-3, -2, -1)) + 1e-5) / (
                                 torch.sum(alphas[:, j,k, :, :, :], dim=(-3, -2, -1)) + 1e-5)
                         gt_decision[:, j,i] = ((iou < 0.8) | (~gt_decision[:, j,k].bool())).float() * gt_decision[:, j,i]
-                    decision = gt_decision[:, j,i].view(self.opt.batch_size, 1, 1, 1).contiguous() # shape b x 1 x 1 x 1
+                    decision = gt_decision[:, j,i].view(self.opt.fake_batch_size, 1, 1, 1).contiguous() # shape b x 1 x 1 x 1
                     result_content_wc [:,j,:,:,:] = torch.clip(content_wc*decision+ result_content_wc[:,j,:,:,:], torch.min(content_wc,result_content_wc[:,j,:,:,:]),torch.max(content_wc,result_content_wc[:,j,:,:,:]))
                     # old = result_content_wc
                 result_content_wc[:,j+1,:,:,:] = result_content_wc[:,j,:,:,:]
@@ -446,9 +446,9 @@ class PainterModel(BaseModel):
             # self.old_content_wc = result_content_wc.clone()
             # self.old_alpha = result_alpha.clone()
             
-            gt_param = gt_param.view(self.opt.batch_size, self.opt.used_strokes, self.opt.inference_repeat_num, self.d).contiguous()
+            gt_param = gt_param.view(self.opt.fake_batch_size, self.opt.used_strokes, self.opt.inference_repeat_num, self.d).contiguous()
 
-            new_batch_size = self.opt.batch_size * (self.opt.inference_repeat_num)*(self.opt.inference_repeat_num-1)//2
+            new_batch_size = self.opt.fake_batch_size * (self.opt.inference_repeat_num)*(self.opt.inference_repeat_num-1)//2
             self.gt_param = torch.zeros(new_batch_size, self.opt.used_strokes, self.d, device=self.device)
             self.old = torch.zeros(new_batch_size, 4, self.patch_size, self.patch_size, device=self.device)
             self.render = torch.zeros(new_batch_size, 4, self.patch_size, self.patch_size, device=self.device)
@@ -456,7 +456,7 @@ class PainterModel(BaseModel):
             self.gt_decision = torch.ones(new_batch_size, self.opt.used_strokes, device=self.device)
 
             _idx = 0
-            for b in range(self.opt.batch_size):
+            for b in range(self.opt.fake_batch_size):
                 for i in range(self.opt.inference_repeat_num):
                     for j in range(i+1, self.opt.inference_repeat_num):
                         self.gt_param[_idx, :,:] = gt_param[b, :,i,:]
