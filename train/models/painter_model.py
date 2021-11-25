@@ -407,13 +407,20 @@ class PainterModel(BaseModel):
         Training data creation code for PaintTransformer_mini_v3 (revised version).
         """
         self.image_paths = input_dict['A_paths']
+        if self.opt.strategy=='linear_CMYKmax':
+            CMYK_split = 1.0 / self.opt.inference_repeat_num
+            print(CMYK_split)
         with torch.no_grad():
             if not self.opt.generative:
-                gt_param = torch.rand(self.opt.fake_batch_size, self.opt.used_strokes, self.opt.inference_repeat_num, self.d, device=self.device)
+                gt_param = torch.rand(self.opt.fake_batch_size, self.opt.inference_repeat_num, self.opt.used_strokes, self.d, device=self.device)
                 gt_param[:, :, :4] = gt_param[:, :, :4] * 0.5 + 0.2
                 gt_param[:, :, -4:-1] = gt_param[:, :, -7:-4]
             else:
-                gt_param = -1 + torch.rand(self.opt.fake_batch_size, self.opt.used_strokes, self.opt.inference_repeat_num, self.d, device=self.device) * 2
+                gt_param = -1 + torch.rand(self.opt.fake_batch_size, self.opt.inference_repeat_num, self.opt.used_strokes, self.d, device=self.device) * 2
+                if self.opt.strategy=='linear_CMYKmax':
+                    print('CMYK strategy applied.')
+                    for i in range(self.opt.inference_repeat_num):
+                        gt_param[:,i,:,-4:] = -1 + torch.rand(self.opt.fake_batch_size,self.opt.used_strokes,4)*CMYK_split*(i+1)* 2
 
             gt_param = gt_param.view(-1, self.d).contiguous() ## b x used_strokes x repeat_num  strokes will be rendered. 
             if not self.opt.generative:
@@ -459,7 +466,7 @@ class PainterModel(BaseModel):
             for b in range(self.opt.fake_batch_size):
                 for i in range(self.opt.inference_repeat_num):
                     for j in range(i+1, self.opt.inference_repeat_num):
-                        self.gt_param[_idx, :,:] = gt_param[b, :,i,:]
+                        self.gt_param[_idx, :,:] = gt_param[b, i,:,:]
                         self.gt_decision[_idx,:] = gt_decision[b, i, :]
                         self.old[_idx,:,:,:] = result_content_wc[b,i,:,:,:]
                         self.render[_idx,:,:,:] = result_content_wc[b,j,:,:,:]
@@ -475,6 +482,7 @@ class PainterModel(BaseModel):
             self.immediate_next = self.immediate_next[idx].view(self.immediate_next.size())
 
             if self.opt.debug:
+                torch.save(result_content_wc, './strategy_check.pth')
                 torch.save(self.gt_param, './gt_param_debug.pth')
                 torch.save(self.old, './old.pth')
                 torch.save(self.render, './render.pth')
@@ -706,15 +714,6 @@ class PainterModel(BaseModel):
                 is_valid_gt = self.gt_decision[i].bool()    # this is the boolean of 8 strokes in single image (8)
                 valid_gt_param = self.gt_param[i, is_valid_gt] # this only contains the ground truth stroke parameters that are actually drawn on the canvas. (?,5)
                 cost_matrix_l1 = torch.cdist(self.pred_param[i], valid_gt_param, p=1)   # calculate the cdist between the pred_param (shape 8,5) and valid_gt_param (shape ?, 5)
-                  # this shape is (?,5)
-#                 pred_param_broad = self.pred_param[i].unsqueeze(1).contiguous().repeat(  
-#                     1, valid_gt_param.shape[0], 1)    # self.pred_param[i] shape is (8,5)
-                # then it becomes (8,1,5)  then it becomes (8,?,5)
-#                 valid_gt_param_broad = valid_gt_param.unsqueeze(0).contiguous().repeat(
-#                     self.pred_param.shape[1], 1, 1)
-                        # it becomes (1,?,5) -> (8,?,5)
-                
-#                 cost_matrix_w = self.gaussian_w_distance(pred_param_broad, valid_gt_param_broad)
                 decision = self.pred_decision[i]  # 8
                 cost_matrix_decision = (1 - decision).unsqueeze(-1).repeat(1, valid_gt_param.shape[0]) #  (8,?)
                 r, c = linear_sum_assignment((cost_matrix_l1 + cost_matrix_decision).cpu()) # + cost_matrix_w + 

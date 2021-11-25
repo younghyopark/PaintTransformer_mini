@@ -1,12 +1,12 @@
 ----------------- Options ---------------
-               batch_size: 8                             	[default: 1]
+               batch_size: 64                            	[default: 1]
                     beta1: 0.5                           
           checkpoints_dir: ./checkpoints                 
            continue_train: False                         
                 crop_size: 256                           
                  dataroot: .                             
              dataset_mode: null                          
-                    debug: False                         
+                    debug: True                          	[default: False]
                   details: False                         
                 direction: AtoB                          
               display_env: main                          
@@ -18,9 +18,10 @@
           display_winsize: 256                           
                     epoch: latest                        
               epoch_count: 1                             
+          fake_batch_size: 1                             	[default: 2]
                generative: True                          	[default: False]
                   gpu_ids: 0                             
-     inference_repeat_num: 5                             	[default: 10]
+     inference_repeat_num: 10                            
                 init_gain: 0.02                          
                 init_type: normal                        
                  input_nc: 3                             
@@ -57,6 +58,7 @@
          save_latest_freq: 5000                          
            serial_batches: False                         
                     sigma: 2.0                           
+                 strategy: linear_CMYKmax                	[default: None]
                    suffix:                               
          update_html_freq: 1000                          
              used_strokes: 10                            	[default: 8]

@@ -17,6 +17,9 @@ python train.py \
 --lambda_gt 30 \
 --lambda_decision 10 \
 --lambda_pixel 50 \
---inference_repeat_num 5 \
+--inference_repeat_num 10 \
+--fake_batch_size 1 \
 --generative \
---revised
+--revised \
+--strategy linear_CMYKmax \
+--debug
