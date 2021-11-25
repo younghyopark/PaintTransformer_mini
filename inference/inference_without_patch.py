@@ -788,10 +788,12 @@ def main(input_path, model_path, output_dir, generative = True, need_animation=F
 
 
 if __name__ == '__main__':
-    for i in ['1','2','3','starry_night','gradient','ocean']:
+    pic_list = ['1','2','3','starry_night','gradient','ocean','jennifer']
+    # pic_list = ['jennifer']
+    for i in pic_list:
         main(input_path='../picture/{}.jpg'.format(i),
-            model_path='../train/checkpoints/painter_generative_GTstroke_32_marker_CMYK_back_upto96_crop40/80_net_g.pth',
-            output_dir='output/painter_generative_GTstroke_32_marker_CMYK_back_upto96_crop40/epoch80',
+            model_path='../train/checkpoints/painter_generative_GTstroke_32_marker_CMYK_back_upto96_crop40_gt30_pix100/latest_net_g.pth',
+            output_dir='output/painter_generative_GTstroke_32_marker_CMYK_back_upto96_crop40_gt30_pix100/epoch50',
             generative=True,
             need_animation=True,  # whether need intermediate results for animation.
             resize_h=256,         # resize original input to this size. None means do not resize.
