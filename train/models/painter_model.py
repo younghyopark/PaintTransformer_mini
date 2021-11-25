@@ -453,7 +453,7 @@ class PainterModel(BaseModel):
             # self.old_content_wc = result_content_wc.clone()
             # self.old_alpha = result_alpha.clone()
             
-            gt_param = gt_param.view(self.opt.fake_batch_size, self.opt.used_strokes, self.opt.inference_repeat_num, self.d).contiguous()
+            gt_param = gt_param.view(self.opt.fake_batch_size, self.opt.inference_repeat_num, self.opt.used_strokes, self.d).contiguous()
 
             new_batch_size = self.opt.fake_batch_size * (self.opt.inference_repeat_num)*(self.opt.inference_repeat_num-1)//2
             self.gt_param = torch.zeros(new_batch_size, self.opt.used_strokes, self.d, device=self.device)
