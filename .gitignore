@@ -4,3 +4,4 @@ inference/output
 inference/output_without_patch
 train/*.pt
 train/debug/*
+train/train.sh

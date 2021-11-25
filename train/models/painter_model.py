@@ -448,7 +448,8 @@ class PainterModel(BaseModel):
                     decision = gt_decision[:, j-1,i].view(self.opt.fake_batch_size, 1, 1, 1).contiguous() # shape b x 1 x 1 x 1
                     result_content_wc [:,j,:,:,:] = torch.clip(content_wc*decision+ result_content_wc[:,j,:,:,:], torch.min(content_wc,result_content_wc[:,j,:,:,:]),torch.max(content_wc,result_content_wc[:,j,:,:,:]))
                     # old = result_content_wc
-                result_content_wc[:,j+1,:,:,:] = result_content_wc[:,j,:,:,:]
+                if not j == self.opt.inference_repeat_num:
+                    result_content_wc[:,j+1,:,:,:] = result_content_wc[:,j,:,:,:]
             # self.render = result_content_wc.view(self.opt.batch_size, self.opt.inference_repeat_num, 4, self.patch_size, self.patch_size).contiguous()
             # self.old_content_wc = result_content_wc.clone()
             # self.old_alpha = result_alpha.clone()
