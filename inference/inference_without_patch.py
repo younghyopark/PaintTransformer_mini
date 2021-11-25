@@ -304,18 +304,19 @@ def latent2stroke(param, H,W, model):
     return brush, alphas
 
 
-def latent2stroke2(param, H,W, model):
+def latent2stroke2(param, H,W, model, device):
     # param: b, 10 (latent) + 3 (RGB)
-    trn_resize = torchvision.transforms.Resize([H,W])
+    trn_resize = torchvision.transforms.Resize([H+40,W+40])
     trn_ToPIL = torchvision.transforms.ToPILImage(mode='CMYK')
     trn_ToTensor = torchvision.transforms.ToTensor()
+    trn_centercrop = torchvision.transforms.CenterCrop([H,W])
     b = param.shape[0]
 #         print(param[:,:-3].shape)
 #         with torch.no_grad():
     param_latent = (param[:,:5] / torch.norm(param[:,:5],dim=1).unsqueeze(1))*2
-    c = torch.zeros(param.shape[0])#.cuda()
+    c = torch.zeros(param.shape[0]).to(device)
     orig_img = model.sample(param_latent, c) ### this outputs bx1xHxW image
-    orig_img = trn_resize(orig_img)
+    orig_img = trn_centercrop(trn_resize(orig_img))
     matte = (orig_img>EPS).float()
     cmyk = matte.repeat(1,4,1,1)
     # print(param[:,:5])
@@ -348,7 +349,7 @@ def latent2stroke2(param, H,W, model):
     matte_color = cmyk*color*alpha
     # print(rgb)
 
-    return matte_color, alpha
+    return matte_color, binary
 
 
 def param2img_serial(
@@ -662,9 +663,9 @@ def main(input_path, model_path, output_dir, generative = True, need_animation=F
         frame_dir = os.path.join(output_dir, input_name[:input_name.find('.')])
         if not os.path.exists(frame_dir):
             os.makedirs(frame_dir)
-    stroke_num = 8
-    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-    device = "cpu"
+    stroke_num = 32
+    device = torch.device("cuda:7" if torch.cuda.is_available() else "cpu")
+    # device = "cpu"
     net_g = network.Painter(8, stroke_num, 256, 8, 3, 3).to(device)
     net_g.load_state_dict(torch.load(model_path))
     net_g.eval()
@@ -681,7 +682,7 @@ def main(input_path, model_path, output_dir, generative = True, need_animation=F
         state = torch.load(os.path.join('../train/strokes_alpha_gamma100_z5_c2_size256_last.pt'),map_location='cpu')        
         model.load_state_dict(state['model_states']['net'])
         for param in model.parameters():
-            print(param, param.requires_grad)
+            # print(param, param.requires_grad)
             param.requires_grad = False
             
         generative_model = model.to(device)
@@ -722,7 +723,7 @@ def main(input_path, model_path, output_dir, generative = True, need_animation=F
             # pred_decision = decisions.view(-1, stroke_num).contiguous()
             # pred_param = param[:, :, :8]
             param = param.view(-1, 9).contiguous()
-            foregrounds, alphas = latent2stroke2(param, resize_h, resize_w, generative_model)
+            foregrounds, alphas = latent2stroke2(param, resize_h, resize_w, generative_model, device)
 
             # foreground, alpha: b * stroke_per_patch, 3, output_size, output_size
             foregrounds = foregrounds.view(-1, stroke_num, 4, resize_h, resize_w)
@@ -789,8 +790,8 @@ def main(input_path, model_path, output_dir, generative = True, need_animation=F
 if __name__ == '__main__':
     for i in ['1','2','3','starry_night','gradient','ocean']:
         main(input_path='../picture/{}.jpg'.format(i),
-            model_path='../train/checkpoints/painter_generative_GTstroke_8_marker_CMYK_back_upto40_FINAL/latest_net_g.pth',
-            output_dir='output/painter_generative_GTstroke_8_marker_CMYK_back_upto40/last',
+            model_path='../train/checkpoints/painter_generative_GTstroke_32_marker_CMYK_back_upto96_crop40/80_net_g.pth',
+            output_dir='output/painter_generative_GTstroke_32_marker_CMYK_back_upto96_crop40/epoch80',
             generative=True,
             need_animation=True,  # whether need intermediate results for animation.
             resize_h=256,         # resize original input to this size. None means do not resize.

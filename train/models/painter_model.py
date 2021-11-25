@@ -452,6 +452,7 @@ class PainterModel(BaseModel):
             self.gt_param = torch.zeros(new_batch_size, self.opt.used_strokes, self.d, device=self.device)
             self.old = torch.zeros(new_batch_size, 4, self.patch_size, self.patch_size, device=self.device)
             self.render = torch.zeros(new_batch_size, 4, self.patch_size, self.patch_size, device=self.device)
+            self.immediate_next = torch.zeros(new_batch_size, 4, self.patch_size, self.patch_size, device=self.device)
             self.gt_decision = torch.ones(new_batch_size, self.opt.used_strokes, device=self.device)
 
             _idx = 0
@@ -462,6 +463,7 @@ class PainterModel(BaseModel):
                         self.gt_decision[_idx,:] = gt_decision[b, i, :]
                         self.old[_idx,:,:,:] = result_content_wc[b,i,:,:,:]
                         self.render[_idx,:,:,:] = result_content_wc[b,j,:,:,:]
+                        self.immediate_next[_idx,:,:,:] = result_content_wc[b,i+1,:,:,:]
                         _idx+=1 
 
             if self.opt.debug:
@@ -684,7 +686,10 @@ class PainterModel(BaseModel):
 
     def optimize_parameters(self):
         self.forward()
-        self.loss_pixel = self.criterion_pixel(self.rec, self.render) * self.opt.lambda_pixel
+        if not self.opt.revised:
+            self.loss_pixel = self.criterion_pixel(self.rec, self.render) * self.opt.lambda_pixel
+        else:
+            self.loss_pixel = self.criterion_pixel(self.rec, self.immediate_next) * self.opt.lambda_pixel
         cur_valid_gt_size = 0
         with torch.no_grad():
             r_idx = []
