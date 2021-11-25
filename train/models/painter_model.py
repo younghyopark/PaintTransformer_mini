@@ -466,6 +466,14 @@ class PainterModel(BaseModel):
                         self.immediate_next[_idx,:,:,:] = result_content_wc[b,i+1,:,:,:]
                         _idx+=1 
 
+
+            idx = torch.randperm(self.gt_param.shape[0])
+            self.gt_param = self.gt_param[idx].view(self.gt_param.size())
+            self.gt_decision = self.gt_decision[idx].view(self.gt_decision.size())
+            self.old = self.old[idx].view(self.old.size())
+            self.render = self.render[idx].view(self.render.size())
+            self.immediate_next = self.immediate_next[idx].view(self.immediate_next.size())
+
             if self.opt.debug:
                 torch.save(self.gt_param, './gt_param_debug.pth')
                 torch.save(self.old, './old.pth')
