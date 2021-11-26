@@ -264,13 +264,22 @@ class PainterModel(BaseModel):
             self.meta_brushes = torch.cat(
                 [brush_large_vertical, brush_large_horizontal], dim=0)
         else:
-            model = BetaVAE_B_256_Conditional(z_dim=5, c_dim = 2, nc=1)       
-            state = torch.load(os.path.join('./strokes_alpha_gamma100_z5_c2_size256_last.pt'),map_location='cpu')        
-            model.load_state_dict(state['model_states']['net'])
-    #         model = model.detach()
-            for param in model.parameters():
-                print(param, param.requires_grad)
-                param.requires_grad = False
+            if 'coarse_to_fine' in self.opt.strategy:
+                model = BetaVAE_B_256_Conditional(z_dim=5, c_dim = 3, nc=1)       
+                state = torch.load(os.path.join('./markers_large_small_gamma100_z5_c3_size256_last.pt'),map_location='cpu')        
+                model.load_state_dict(state['model_states']['net'])
+        #         model = model.detach()
+                for param in model.parameters():
+                    print(param, param.requires_grad)
+                    param.requires_grad = False
+            else: 
+                model = BetaVAE_B_256_Conditional(z_dim=5, c_dim = 2, nc=1)       
+                state = torch.load(os.path.join('./strokes_alpha_gamma100_z5_c2_size256_last.pt'),map_location='cpu')        
+                model.load_state_dict(state['model_states']['net'])
+        #         model = model.detach()
+                for param in model.parameters():
+                    print(param, param.requires_grad)
+                    param.requires_grad = False
                 
             self.generative_model = model.to(self.device)
 
@@ -367,7 +376,7 @@ class PainterModel(BaseModel):
     
         return brush, alphas
     
-    def latent2stroke2(self, param, H,W, details=False):
+    def latent2stroke2(self, param, H,W, details=False, largesmall = None):
         # param: b, 10 (latent) + 3 (RGB)
         trn_resize = torchvision.transforms.Resize([H+40,W+40])
         trn_crop= torchvision.transforms.CenterCrop([H,W])
@@ -377,12 +386,17 @@ class PainterModel(BaseModel):
 #         print(param[:,:-3].shape)
 #         with torch.no_grad():
         param_latent = (param[:,:5] / torch.norm(param[:,:5],dim=1).unsqueeze(1))*self.opt.sigma
-        if not details:
-            c = torch.zeros(param.shape[0]).cuda()
-            orig_img = self.generative_model.sample(param_latent, c) ### this outputs bx1xHxW image
+        if largesmall is None:
+            if not details:
+                c = torch.zeros(param.shape[0]).cuda()
+                orig_img = self.generative_model.sample(param_latent, c) ### this outputs bx1xHxW image
+            else:
+                c = torch.ones(param.shape[0]).cuda()   ## pen
+                orig_img = self.generative_model_details.sample(param_latent, c) ### this outputs bx1xHxW image
         else:
-            c = torch.ones(param.shape[0]).cuda()   ## pen
-            orig_img = self.generative_model_details.sample(param_latent, c) ### this outputs bx1xHxW image
+            c = largesmall.view(-1,1).squeeze().cuda()
+            print(param_latent.shape, c.shape)
+            orig_img = self.generative_model.sample(param_latent, c) ### this outputs bx1xHxW image
         orig_img = trn_crop(trn_resize(orig_img))
         if not details: 
             EPS = EPS1
@@ -407,9 +421,8 @@ class PainterModel(BaseModel):
         Training data creation code for PaintTransformer_mini_v3 (revised version).
         """
         self.image_paths = input_dict['A_paths']
-        if self.opt.strategy=='linear_CMYKmax':
-            CMYK_split = 1.0 / self.opt.inference_repeat_num
-            # print(CMYK_split)
+        if 'linear_CMYKmax' in self.opt.strategy:
+            CMYK_split = 1.0 / (self.opt.inference_repeat_num+1)
         with torch.no_grad():
             if not self.opt.generative:
                 gt_param = torch.rand(self.opt.fake_batch_size, self.opt.inference_repeat_num, self.opt.used_strokes, self.d, device=self.device)
@@ -417,18 +430,23 @@ class PainterModel(BaseModel):
                 gt_param[:, :, -4:-1] = gt_param[:, :, -7:-4]
             else:
                 gt_param = -1 + torch.rand(self.opt.fake_batch_size, self.opt.inference_repeat_num, self.opt.used_strokes, self.d, device=self.device) * 2
-                if self.opt.strategy=='linear_CMYKmax':
+                if 'linear_CMYKmax' in self.opt.strategy:
                     # print('CMYK strategy applied.')
                     for i in range(self.opt.inference_repeat_num):
                         gt_param[:,i,:,-4:] = -1 + torch.rand(self.opt.fake_batch_size,self.opt.used_strokes,4)*CMYK_split*(i+1)* 2
 
             gt_param = gt_param.view(-1, self.d).contiguous() ## b x used_strokes x repeat_num  strokes will be rendered. 
+            gt_largesmall = None
+            if 'coarse_to_fine' in self.opt.strategy:
+                gt_largesmall = torch.ones(self.opt.fake_batch_size, self.opt.inference_repeat_num, self.opt.used_strokes, device=self.device)
+                for i in range(4):
+                    gt_largesmall[:,i,:] = torch.zeros(self.opt.fake_batch_size, self.opt.used_strokes)
             if not self.opt.generative:
                 foregrounds, alphas = self.param2stroke(gt_param, self.patch_size, self.patch_size)
                 foregrounds = morphology.Dilation2d(m=1)(foregrounds)
                 alphas = morphology.Erosion2d(m=1)(alphas)
             else:
-                foregrounds, alphas = self.latent2stroke2(gt_param, self.patch_size, self.patch_size)
+                foregrounds, alphas = self.latent2stroke2(gt_param, self.patch_size, self.patch_size, largesmall = gt_largesmall)
             # elif : 
             foregrounds = foregrounds.view(self.opt.fake_batch_size, self.opt.inference_repeat_num, self.opt.used_strokes, 4, self.patch_size,
                                            self.patch_size).contiguous()
@@ -436,7 +454,6 @@ class PainterModel(BaseModel):
                                  self.patch_size).contiguous()
             result_content_wc = torch.zeros(self.opt.fake_batch_size, 1+self.opt.inference_repeat_num, 4, self.patch_size, self.patch_size, device=self.device)
             gt_decision = torch.ones(self.opt.fake_batch_size, self.opt.inference_repeat_num, self.opt.used_strokes, device=self.device)
-
             for j in range(1,self.opt.inference_repeat_num+1):
                 for i in range(self.opt.used_strokes):
                     content_wc = foregrounds[:, j-1,i, :, :, :]  # shape b x 4 x 256 x 256 
@@ -462,6 +479,8 @@ class PainterModel(BaseModel):
             self.render = torch.zeros(new_batch_size, 4, self.patch_size, self.patch_size, device=self.device)
             self.immediate_next = torch.zeros(new_batch_size, 4, self.patch_size, self.patch_size, device=self.device)
             self.gt_decision = torch.ones(new_batch_size, self.opt.used_strokes, device=self.device)
+            if 'coarse_to_fine' in self.opt.strategy:
+                self.gt_largesmall = torch.ones(new_batch_size, self.opt.used_strokes, device=self.device)
 
             _idx = 0
             for b in range(self.opt.fake_batch_size):
@@ -469,15 +488,19 @@ class PainterModel(BaseModel):
                     for j in range(i+1, self.opt.inference_repeat_num+1):
                         self.gt_param[_idx, :,:] = gt_param[b, i,:,:]
                         self.gt_decision[_idx,:] = gt_decision[b, i, :]
+                        if 'coarse_to_fine' in self.opt.strategy:
+                            self.gt_largesmall[_idx,:] = gt_largesmall[b,i,:]
                         self.old[_idx,:,:,:] = result_content_wc[b,i,:,:,:]
                         self.render[_idx,:,:,:] = result_content_wc[b,j,:,:,:]
                         self.immediate_next[_idx,:,:,:] = result_content_wc[b,i+1,:,:,:]
                         _idx+=1 
 
-
+            ## shuffle the batch
             idx = torch.randperm(self.gt_param.shape[0])
             self.gt_param = self.gt_param[idx].view(self.gt_param.size())
             self.gt_decision = self.gt_decision[idx].view(self.gt_decision.size())
+            if 'coarse_to_fine' in self.opt.strategy:
+                self.gt_largesmall = self.gt_largesmall[idx].view(self.gt_largesmall.size())
             self.old = self.old[idx].view(self.old.size())
             self.render = self.render[idx].view(self.render.size())
             self.immediate_next = self.immediate_next[idx].view(self.immediate_next.size())
@@ -608,25 +631,26 @@ class PainterModel(BaseModel):
 
 
     def forward(self):
-        param, decisions = self.net_g(self.render, self.old)
-        # print(self.net_g.linear_param[0].weight)
-        # print('latent', param[:,:5])
-        # print('color', param[:,5:8])
-#         print(param.shape)
-        # stroke_param: b, stroke_per_patch, param_per_stroke
-        # decision: b, stroke_per_patch, 1
+        if 'coarse_to_fine' in self.opt.strategy:
+            param, decisions, largesmall = self.net_g(self.render, self.old)
+            self.pred_largesmall = largesmall.view(-1, self.opt.used_strokes).contiguous()
+        else:
+            param, decisions = self.net_g(self.render, self.old)
+
         self.pred_decision = decisions.view(-1, self.opt.used_strokes).contiguous()
-        self.pred_param = param[:, :, :self.d_shape] ## 3,8,5
-        param = param.view(-1, self.d).contiguous()   # 24,12
+        self.pred_param = param[:, :, :self.d_shape] 
+        param = param.view(-1, self.d).contiguous()   
         if not self.opt.generative:
             foregrounds, alphas = self.param2stroke(param, self.patch_size, self.patch_size)
             foregrounds = morphology.Dilation2d(m=1)(foregrounds)
             alphas = morphology.Erosion2d(m=1)(alphas)
         else:
-            foregrounds, alphas = self.latent2stroke2(param, self.patch_size, self.patch_size, self.opt.details)
-            # if self.opt.details:
-            #     foregrounds = morphology.Dilation2d(m=1)(foregrounds)
-            #     alphas = morphology.Erosion2d(m=1)(alphas)
+            if 'coarse_to_fine' in self.opt.strategy:
+                largesmall = networks.SignWithSigmoidGrad.apply(largesmall.view(-1, 1).contiguous())  
+                foregrounds, alphas = self.latent2stroke2(param, self.patch_size, self.patch_size, self.opt.details, largesmall)
+            else:
+                foregrounds, alphas = self.latent2stroke2(param, self.patch_size, self.patch_size, self.opt.details)
+
         # foreground, alpha: b * stroke_per_patch, 3, output_size, output_size
         foregrounds = foregrounds.view(-1, self.opt.used_strokes, 4, self.patch_size, self.patch_size)
         alphas = alphas.view(-1, self.opt.used_strokes, 1, self.patch_size, self.patch_size)
@@ -716,8 +740,13 @@ class PainterModel(BaseModel):
                 valid_gt_param = self.gt_param[i, is_valid_gt] # this only contains the ground truth stroke parameters that are actually drawn on the canvas. (?,5)
                 cost_matrix_l1 = torch.cdist(self.pred_param[i], valid_gt_param, p=1)   # calculate the cdist between the pred_param (shape 8,5) and valid_gt_param (shape ?, 5)
                 decision = self.pred_decision[i]  # 8
+                largesmall = self.pred_largesmall[i]
                 cost_matrix_decision = (1 - decision).unsqueeze(-1).repeat(1, valid_gt_param.shape[0]) #  (8,?)
-                r, c = linear_sum_assignment((cost_matrix_l1 + cost_matrix_decision).cpu()) # + cost_matrix_w + 
+                if 'coarse_to_fine' in self.opt.strategy:
+                    cost_matrix_largesmall = (1 - largesmall).unsqueeze(-1).repeat(1, valid_gt_param.shape[0])
+                    r, c = linear_sum_assignment((cost_matrix_l1 + cost_matrix_decision + cost_matrix_largesmall).cpu()) # + cost_matrix_w + 
+                else:
+                    r, c = linear_sum_assignment((cost_matrix_l1 + cost_matrix_decision).cpu()) # + cost_matrix_w + 
                 r_idx.append(torch.tensor(r + self.pred_param.shape[1] * i, device=self.device))
                 c_idx.append(torch.tensor(c + cur_valid_gt_size, device=self.device))
                 cur_valid_gt_size += valid_gt_param.shape[0]
@@ -725,16 +754,25 @@ class PainterModel(BaseModel):
             c_idx = torch.cat(c_idx, dim=0)
             paired_gt_decision = torch.zeros(self.gt_decision.shape[0] * self.gt_decision.shape[1], device=self.device)
             paired_gt_decision[r_idx] = 1.
+            if 'coarse_to_fine' in self.opt.strategy:
+                paired_gt_largesmall = torch.zeros(self.gt_largesmall.shape[0] * self.gt_largesmall.shape[1], device=self.device)
+                paired_gt_largesmall[r_idx] = 1.
         all_valid_gt_param = self.gt_param[self.gt_decision.bool(), :]
         all_pred_param = self.pred_param.view(-1, self.pred_param.shape[2]).contiguous()
         all_pred_decision = self.pred_decision.view(-1).contiguous()
+        if 'coarse_to_fine' in self.opt.strategy:
+            all_pred_largesmall = self.pred_largesmall.view(-1).contiguous()
         paired_gt_param = all_valid_gt_param[c_idx, :]
         paired_pred_param = all_pred_param[r_idx, :]
         # print(paired_pred_param.shape)
         self.loss_gt = self.criterion_pixel(paired_pred_param, paired_gt_param) * self.opt.lambda_gt
 #         self.loss_w = self.gaussian_w_distance(paired_pred_param, paired_gt_param).mean() * self.opt.lambda_w
         self.loss_decision = self.criterion_decision(all_pred_decision, paired_gt_decision) * self.opt.lambda_decision
-        loss = self.loss_pixel + self.loss_gt + self.loss_decision # + self.loss_w 
+        if 'coarse_to_fine' in self.opt.strategy:
+            self.loss_largesmall = self.criterion_decision(all_pred_largesmall, paired_gt_largesmall) * self.opt.lambda_decision
+            loss = self.loss_pixel + self.loss_gt + self.loss_decision + self.loss_largesmall # + self.loss_w 
+        else:
+            loss = self.loss_pixel + self.loss_gt + self.loss_decision # + self.loss_w 
         loss.backward()
         self.optimizer.step()
         self.optimizer.zero_grad()

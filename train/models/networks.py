@@ -128,6 +128,7 @@ class Painter(nn.Module):
             nn.Tanh()
             )
         self.linear_decider = nn.Linear(hidden_dim, 1)
+        self.linear_largesmall = nn.Linear(hidden_dim,1)
         self.query_pos = nn.Parameter(torch.rand(total_strokes, hidden_dim))
         self.row_embed = nn.Parameter(torch.rand(31, hidden_dim // 2))
         self.col_embed = nn.Parameter(torch.rand(31, hidden_dim // 2))
@@ -157,6 +158,7 @@ class Painter(nn.Module):
         color = self.linear_color(hidden_state) 
         # print(color.shape)
         decision = self.linear_decider(hidden_state)
-        return torch.cat([param, color], dim=-1), decision
+        largesmall = self.linear_largesmall(hidden_state)
+        return torch.cat([param, color], dim=-1), decision, largesmall
         # return param, color, decision
     ## returns param b,8,5 color b,8,3 color b,8,3 torch.rand b,8,1 => b,8,12

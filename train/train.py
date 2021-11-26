@@ -32,10 +32,9 @@ if __name__ == '__main__':
                 model.set_input(data, opt.multiply)         # unpack data from dataset and apply preprocessing
             else:
                 model.set_input2(data) 
+            model.optimize_parameters()   # calculate loss functions, get gradients, update network weights
             if opt.debug:
                 raise("debugging.")
-            model.optimize_parameters()   # calculate loss functions, get gradients, update network weights
-
             if total_iters % opt.display_freq == 0:   # display images on visdom and save images to a HTML file
                 save_result = total_iters % opt.update_html_freq == 0
                 model.compute_visuals()

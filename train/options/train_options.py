@@ -36,7 +36,7 @@ class TrainOptions(BaseOptions):
         parser.add_argument('--revised', action='store_true')
         parser.add_argument('--debug', action='store_true')
         parser.add_argument('--strategy', type=str, default=None)   ## 'linear_CMYKmax'
-        # parser.add_argument('--strategy_name', )
+        # parser.add_argument('--ctf_large_ratio', type=int, default=0.5)   ## 'linear_CMYKmax'
 
 
         # network saving and loading parameters
