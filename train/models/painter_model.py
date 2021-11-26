@@ -508,7 +508,7 @@ class PainterModel(BaseModel):
                         if 'coarse_to_fine' in self.opt.strategy:
                             self.gt_largesmall[_idx,:] = gt_largesmall[b,i,:]
                         self.old[_idx,:,:,:] = result_content_wc[b,i,:,:,:]
-                        self.render[_idx,:,:,:] = result_content_wc[b,self.opt.inference_num,:,:,:]
+                        self.render[_idx,:,:,:] = result_content_wc[b,self.opt.inference_repeat_num,:,:,:]
                         self.immediate_next[_idx,:,:,:] = result_content_wc[b,i+1,:,:,:]
                         _idx+=1 
 
