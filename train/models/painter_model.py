@@ -243,7 +243,7 @@ class PainterModel(BaseModel):
 
     def __init__(self, opt):
         BaseModel.__init__(self, opt)
-        self.loss_names = ['pixel', 'gt', 'decision']
+        self.loss_names = ['pixel', 'gt', 'decision','largesmall']
         self.visual_names = ['old', 'render', 'immediate_next','rec']
         self.model_names = ['g']
         self.d = 9  # latent 5 + rgb 3
@@ -412,7 +412,6 @@ class PainterModel(BaseModel):
             matte_color = cmyk*color*alpha
         else:
             matte_color = cmyk*color
-    
         return matte_color, binary
 
 
@@ -472,8 +471,11 @@ class PainterModel(BaseModel):
             # self.old_alpha = result_alpha.clone()
             
             gt_param = gt_param.view(self.opt.fake_batch_size, self.opt.inference_repeat_num, self.opt.used_strokes, self.d).contiguous()
-
-            new_batch_size = self.opt.fake_batch_size * (self.opt.inference_repeat_num)*(self.opt.inference_repeat_num+1)//2
+            
+            if not self.opt.revised2:
+                new_batch_size = self.opt.fake_batch_size * (self.opt.inference_repeat_num)*(self.opt.inference_repeat_num+1)//2
+            else:
+                new_batch_size = self.opt.fake_batch_size * (self.opt.inference_repeat_num)#*(self.opt.inference_repeat_num+1)//2
             self.gt_param = torch.zeros(new_batch_size, self.opt.used_strokes, self.d, device=self.device)
             self.old = torch.zeros(new_batch_size, 4, self.patch_size, self.patch_size, device=self.device)
             self.render = torch.zeros(new_batch_size, 4, self.patch_size, self.patch_size, device=self.device)
@@ -482,16 +484,31 @@ class PainterModel(BaseModel):
             if 'coarse_to_fine' in self.opt.strategy:
                 self.gt_largesmall = torch.ones(new_batch_size, self.opt.used_strokes, device=self.device)
 
-            _idx = 0
-            for b in range(self.opt.fake_batch_size):
-                for i in range(self.opt.inference_repeat_num):
-                    for j in range(i+1, self.opt.inference_repeat_num+1):
+
+            if not self.opt.revised2:
+                _idx = 0
+                for b in range(self.opt.fake_batch_size):
+                    for i in range(self.opt.inference_repeat_num):
+                        for j in range(i+1, self.opt.inference_repeat_num+1):
+                            self.gt_param[_idx, :,:] = gt_param[b, i,:,:]
+                            self.gt_decision[_idx,:] = gt_decision[b, i, :]
+                            if 'coarse_to_fine' in self.opt.strategy:
+                                self.gt_largesmall[_idx,:] = gt_largesmall[b,i,:]
+                            self.old[_idx,:,:,:] = result_content_wc[b,i,:,:,:]
+                            self.render[_idx,:,:,:] = result_content_wc[b,j,:,:,:]
+                            self.immediate_next[_idx,:,:,:] = result_content_wc[b,i+1,:,:,:]
+                            _idx+=1 
+            else:
+                _idx = 0
+                for b in range(self.opt.fake_batch_size):
+                    for i in range(self.opt.inference_repeat_num):
+                        # for j in range(i+1, self.opt.inference_repeat_num+1):
                         self.gt_param[_idx, :,:] = gt_param[b, i,:,:]
                         self.gt_decision[_idx,:] = gt_decision[b, i, :]
                         if 'coarse_to_fine' in self.opt.strategy:
                             self.gt_largesmall[_idx,:] = gt_largesmall[b,i,:]
                         self.old[_idx,:,:,:] = result_content_wc[b,i,:,:,:]
-                        self.render[_idx,:,:,:] = result_content_wc[b,j,:,:,:]
+                        self.render[_idx,:,:,:] = result_content_wc[b,self.opt.inference_num,:,:,:]
                         self.immediate_next[_idx,:,:,:] = result_content_wc[b,i+1,:,:,:]
                         _idx+=1 
 
