@@ -395,7 +395,7 @@ class PainterModel(BaseModel):
                 orig_img = self.generative_model_details.sample(param_latent, c) ### this outputs bx1xHxW image
         else:
             c = largesmall.view(-1,1).squeeze().cuda()
-            print(param_latent.shape, c.shape)
+            # print(param_latent.shape, c.shape)
             orig_img = self.generative_model.sample(param_latent, c) ### this outputs bx1xHxW image
         orig_img = trn_crop(trn_resize(orig_img))
         if not details: 
