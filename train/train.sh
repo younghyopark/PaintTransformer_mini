@@ -1,25 +1,31 @@
 python train.py \
---name new_version_iter5_stroke10_gt30_pix50_dec10 \
+--name DEEPER_LONGHORIZON_SIMPLER_stroke32_C1F2_gt100_pix50_dec10_400epoch_genz5c2_lr1e-5 \
 --gpu_ids 0 \
 --model painter \
 --dataset_mode null \
---batch_size 64 \
+--batch_size 32 \
 --display_freq 25 \
 --print_freq 25 \
---lr 1e-4 \
+--lr 1e-5 \
 --init_type normal \
---n_epochs 200 \
+--n_epochs 400 \
 --n_epochs_decay 20 \
 --max_dataset_size 14400 \
 --save_epoch_freq 20 \
---display_port 8092 \
---used_strokes 10 \
---lambda_gt 30 \
+--display_port 8080 \
+--used_strokes 32 \
+--long_horizon \
+--simpler_long_horizon \
+--lambda_gt 100 \
 --lambda_decision 10 \
 --lambda_pixel 50 \
---inference_repeat_num 10 \
---fake_batch_size 1 \
+--inference_repeat_num 3 \
+--coarse_num 1 \
+--fine_num 2 \
+--fake_batch_size 4 \
 --generative \
---revised \
---strategy linear_CMYKmax \
---debug
+--generative_cdim 2 \
+--generative_zdim 5 \
+--generative_path markers_large_small_gamma100_z5_c2_size256_last \
+--strategy strategy \
+--decide_largesmall

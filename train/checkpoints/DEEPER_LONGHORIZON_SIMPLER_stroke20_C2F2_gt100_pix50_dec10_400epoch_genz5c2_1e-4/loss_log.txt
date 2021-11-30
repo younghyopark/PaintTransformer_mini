@@ -1,0 +1,14 @@
+================ Training Loss (Tue Nov 30 09:32:33 2021) ================
+(epoch: 1, iters: 1600, time: 0.008, data: 0.238) pixel: 4.843 gt: 43.118 decision: 15.450 
+(epoch: 1, iters: 3200, time: 0.007, data: 0.000) pixel: 5.095 gt: 41.016 decision: 13.993 
+(epoch: 1, iters: 4800, time: 0.006, data: 0.000) pixel: 5.197 gt: 41.791 decision: 14.364 
+(epoch: 1, iters: 6400, time: 0.006, data: 0.000) pixel: 5.334 gt: 42.119 decision: 16.000 
+(epoch: 1, iters: 8000, time: 0.009, data: 0.000) pixel: 5.002 gt: 41.948 decision: 12.489 
+(epoch: 1, iters: 9600, time: 0.007, data: 0.000) pixel: 4.707 gt: 40.415 decision: 15.217 
+(epoch: 1, iters: 11200, time: 0.006, data: 0.000) pixel: 4.762 gt: 41.519 decision: 13.486 
+(epoch: 1, iters: 12800, time: 0.007, data: 0.000) pixel: 4.772 gt: 40.271 decision: 13.422 
+(epoch: 1, iters: 14400, time: 0.007, data: 0.000) pixel: 4.949 gt: 41.589 decision: 12.371 
+(epoch: 2, iters: 1600, time: 0.008, data: 0.207) pixel: 4.713 gt: 40.546 decision: 14.723 
+(epoch: 2, iters: 3200, time: 0.007, data: 0.000) pixel: 4.643 gt: 40.917 decision: 16.172 
+(epoch: 2, iters: 4800, time: 0.007, data: 0.000) pixel: 4.725 gt: 40.956 decision: 16.032 
+================ Training Loss (Tue Nov 30 09:35:35 2021) ================

@@ -1,0 +1,78 @@
+----------------- Options ---------------
+             CMYK_maxclip: 0                             
+               batch_size: 32                            	[default: 1]
+                    beta1: 0.5                           
+          checkpoints_dir: ./checkpoints                 
+           coarse_CMYKmax: 0.7                           
+               coarse_num: 1                             	[default: 0]
+            continue_path: None                          
+           continue_train: False                         
+        continue_training: False                         
+                crop_size: 256                           
+                 dataroot: .                             
+             dataset_mode: null                          
+                    debug: False                         
+        decide_largesmall: True                          	[default: False]
+                direction: AtoB                          
+              display_env: main                          
+             display_freq: 25                            	[default: 40]
+               display_id: 1                             
+            display_ncols: 4                             
+             display_port: 8080                          	[default: 8097]
+           display_server: http://localhost              
+          display_winsize: 256                           
+                    epoch: latest                        
+              epoch_count: 1                             
+          fake_batch_size: 4                             	[default: 2]
+             fine_CMYKmax: 1.0                           
+             fine_CMYKmin: 0.7                           
+                 fine_num: 2                             	[default: 0]
+               generative: True                          	[default: False]
+          generative_cdim: 2                             	[default: 0]
+          generative_path: markers_large_small_gamma100_z5_c2_size256_last	[default: None]
+          generative_zdim: 5                             
+                  gpu_ids: 0                             
+     inference_repeat_num: 3                             	[default: 10]
+                init_gain: 0.02                          
+                init_type: normal                        
+                 input_nc: 3                             
+                  isTrain: True                          	[default: None]
+          lambda_decision: 10.0                          
+                lambda_gt: 100.0                         	[default: 50.0]
+             lambda_pixel: 50.0                          	[default: 10.0]
+            lambda_recall: 10.0                          
+                 lambda_w: 10.0                          
+                layer_num: 3                             
+                load_iter: 0                             	[default: 0]
+                load_size: 286                           
+             long_horizon: True                          	[default: False]
+                       lr: 1e-05                         	[default: 0.0002]
+           lr_decay_iters: 50                            
+                lr_policy: linear                        
+         max_dataset_size: 14400                         	[default: inf]
+                    model: painter                       
+                 multiply: 1                             
+                 n_epochs: 400                           	[default: 100]
+           n_epochs_decay: 20                            	[default: 100]
+                     name: DEEPER_LONGHORIZON_SIMPLER_stroke32_C1F2_gt100_pix50_dec10_400epoch_genz5c2_lr1e-5	[default: experiment_name]
+                      ngf: 512                           
+                  no_flip: False                         
+                  no_html: False                         
+               num_blocks: 3                             
+              num_threads: 4                             
+                output_nc: 3                             
+                    phase: train                         
+               preprocess: resize_and_crop               
+               print_freq: 25                            	[default: 10]
+             save_by_iter: False                         
+          save_epoch_freq: 20                            	[default: 5]
+         save_latest_freq: 5000                          
+           serial_batches: False                         
+                    sigma: 2.0                           
+     simpler_long_horizon: True                          	[default: False]
+                 strategy: strategy                      	[default: None]
+                   suffix:                               
+         update_html_freq: 1000                          
+             used_strokes: 32                            	[default: 8]
+                  verbose: False                         
+----------------- End -------------------
