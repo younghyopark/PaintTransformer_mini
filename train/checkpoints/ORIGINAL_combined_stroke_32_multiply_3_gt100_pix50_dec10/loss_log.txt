@@ -1,0 +1,8 @@
+(epoch: 19, iters: 12000, time: 0.063, data: 0.000) pixel: 3.771 gt: 36.147 decision: 2.444 
+(epoch: 19, iters: 12800, time: 0.042, data: 0.000) pixel: 5.343 gt: 36.672 decision: 2.631 
+(epoch: 19, iters: 13600, time: 0.041, data: 0.000) pixel: 5.168 gt: 36.233 decision: 3.079 
+(epoch: 19, iters: 14400, time: 0.058, data: 0.000) pixel: 3.493 gt: 36.621 decision: 3.261 
+(epoch: 20, iters: 800, time: 0.069, data: 0.223) pixel: 4.154 gt: 36.431 decision: 2.749 
+(epoch: 20, iters: 1600, time: 0.039, data: 0.000) pixel: 5.537 gt: 36.892 decision: 3.866 
+(epoch: 20, iters: 2400, time: 0.067, data: 0.000) pixel: 3.895 gt: 36.596 decision: 3.260 
+(epoch: 20, iters: 3200, time: 0.044, data: 0.000) pixel: 4.459 gt: 36.762 decision: 2.513 

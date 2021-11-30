@@ -14,7 +14,11 @@ if __name__ == '__main__':
     model.setup(opt)               # regular setup: load and print networks; create schedulers
     visualizer = Visualizer(opt)   # create a visualizer that display/save images and plots
     total_iters = 0                # the total number of training iterations
-
+    
+    if opt.strategy is not None:
+        if 'coarse_to_fine' in opt.strategy:
+            if not opt.fine_num + opt.coarse_num == opt.inference_repeat_num:
+                raise('error! coarse iter + fine iter does not match total repeat iter')
     for epoch in range(opt.epoch_count, opt.n_epochs + opt.n_epochs_decay + 1):
         epoch_start_time = time.time()  # timer for entire epoch
         iter_data_time = time.time()    # timer for data loading per iteration
@@ -28,9 +32,14 @@ if __name__ == '__main__':
 
             total_iters += opt.batch_size
             epoch_iter += opt.batch_size
-            model.set_input(data, 5)         # unpack data from dataset and apply preprocessing
+            if not opt.long_horizon:
+                model.set_input(data, opt.multiply)         # unpack data from dataset and apply preprocessing
+            else:
+                # print('using revised model for long-horizon task')
+                model.set_input2(data) 
             model.optimize_parameters()   # calculate loss functions, get gradients, update network weights
-
+            if opt.debug:
+                raise("debugging.")
             if total_iters % opt.display_freq == 0:   # display images on visdom and save images to a HTML file
                 save_result = total_iters % opt.update_html_freq == 0
                 model.compute_visuals()
@@ -46,6 +55,7 @@ if __name__ == '__main__':
 
             if total_iters % opt.save_latest_freq == 0:   # cache our latest model every <save_latest_freq> iterations
                 print('saving the latest model (epoch %d, total_iters %d)' % (epoch, total_iters))
+                print('this is the training for {} at GPU #{}'.format(opt.name, opt.gpu_ids))
                 save_suffix = 'iter_%d' % total_iters if opt.save_by_iter else 'latest'
                 model.save_networks(save_suffix)
 

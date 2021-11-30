@@ -10,9 +10,12 @@ import torch.nn as nn
 import torch.nn.init as init
 import torchvision
 from tqdm import tqdm
+from PIL import ImageFont
+from PIL import ImageDraw 
+
 
 idx = 0
-
+EPS = 1e-1
 class View(nn.Module):
     def __init__(self, size):
         super(View, self).__init__()
@@ -120,10 +123,117 @@ class BetaVAE_B_256(nn.Module):
     
     
     
+class BetaVAE_B_256_Conditional(nn.Module):
+    """Model proposed in understanding beta-VAE paper(Burgess et al, arxiv:1804.03599, 2018)."""
+
+    def __init__(self, z_dim=3, c_dim = 4, nc=1):
+        super(BetaVAE_B_256_Conditional, self).__init__()
+        self.nc = nc
+        self.z_dim = z_dim
+        self.c_dim = c_dim
+        
+        self.embed_label = nn.Sequential(
+            nn.Linear(c_dim, 512),              # B, 256
+            nn.ReLU(True),
+            nn.Linear(512, 2048),                 # B, 256
+            nn.ReLU(True),
+            nn.Linear(2048, 256 *256),             # B, z_dim*2
+        )
+        self.embed_data = nn.Sequential(
+            nn.Conv2d(self.nc, self.nc, kernel_size=1)
+        )
+
+        self.conv_encoder = nn.Sequential(
+            nn.Conv2d(nc+1, 32, 4, 2, 1),          # B,  32, 32, 32
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32, 16, 16
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32,  8,  8
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32,  4,  4
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32,  4,  4
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32,  4,  4
+            nn.ReLU(True),
+            View((-1, 32*4*4)),                  # B, 512
+            nn.Linear(32*4*4, 256),              # B, 256
+            nn.ReLU(True),
+            nn.Linear(256, 256),                 # B, 256
+            nn.ReLU(True),
+            nn.Linear(256, z_dim*2),             # B, z_dim*2
+        )
+
+
+        self.decoder = nn.Sequential(
+            nn.Linear(z_dim+c_dim, 256),               # B, 256
+            nn.ReLU(True),
+            nn.Linear(256, 256),                 # B, 256
+            nn.ReLU(True),
+            nn.Linear(256, 32*4*4),              # B, 512
+            nn.ReLU(True),
+            View((-1, 32, 4, 4)),                # B,  32,  4,  4
+            nn.ConvTranspose2d(32, 32, 4, 2, 1), # B,  32,  8,  8
+            nn.ReLU(True),
+            nn.ConvTranspose2d(32, 32, 4, 2, 1), # B,  32, 16, 16
+            nn.ReLU(True),
+            nn.ConvTranspose2d(32, 32, 4, 2, 1), # B,  32, 32, 32
+            nn.ReLU(True),
+            nn.ConvTranspose2d(32, 32, 4, 2, 1), # B,  32, 32, 32
+            nn.ReLU(True),
+            nn.ConvTranspose2d(32, 32, 4, 2, 1), # B,  32, 32, 32
+            nn.ReLU(True),
+            nn.ConvTranspose2d(32, nc, 4, 2, 1), # B,  nc, 64, 64
+        )
+        self.weight_init()     
+        
+    def weight_init(self):
+        for block in self._modules:
+            for m in self._modules[block]:
+                kaiming_init(m)
+                
+    def forward(self, x, c):
+        # img_feature = self.conv_encoder(x)
+        # t = torch.cat((img_feature, c),dim=1)
+        distributions = self._encode(x,c)
+        mu = distributions[:, :self.z_dim]
+        logvar = distributions[:, self.z_dim:]
+        z = reparametrize(mu, logvar)
+        # t2 = torch.cat((z,c),dim=1)
+        x_recon = self._decode(z,c)
+
+        return x_recon, mu, logvar
+    
+    def sample(self,z,c):
+        x_recon = self._decode(z,c)
+        x_recon = torch.sigmoid(x_recon)
+        return x_recon
+
+    def _encode(self, x, c):
+        c = F.one_hot(c.to(torch.int64), self.c_dim).float()
+        class_feature = self.embed_label(c)
+        class_feature = class_feature.reshape(-1,1,256,256)
+        img_feature = self.embed_data(x)
+        t = torch.cat((img_feature,class_feature),dim=1)
+        distributions = self.conv_encoder(t)
+        return distributions
+
+    def _decode(self, z,c):
+        c = F.one_hot(c.to(torch.int64), self.c_dim).float()
+#         print(z.shape,c.shape)
+        t = torch.cat((z,c),dim=1)
+        return self.decoder(t)
     
 
 def save_img(img, output_path, name):
-    result = Image.fromarray((img.data.cpu().numpy().transpose((1, 2, 0)) * 255).astype(np.uint8))
+    # print((img.data.cpu().numpy().transpose((1, 2, 0))).shape)
+    result = Image.fromarray((img.data.cpu().numpy().transpose((1, 2, 0)) * 255).astype(np.uint8), mode='CMYK').convert('RGB')
+    draw = ImageDraw.Draw(result)
+    # font = ImageFont.truetype(<font-file>, <font-size>)
+    font = ImageFont.truetype("./arial.ttf", 16)
+    # draw.text((x, y),"Sample Text",(r,g,b))
+    draw.text((0, 0),name,(0,0,0),font=font)
+    # img.save('sample-out.jpg')
     result.save(os.path.join(output_path, name))
 
 
@@ -204,267 +314,46 @@ def latent2stroke(param, H,W, model):
     return brush, alphas
 
 
-def param2img_serial(
-        param, decision, generative_model, cur_canvas, frame_dir, has_border=False, original_h=None, original_w=None):
-    """
-    Input stroke parameters and decisions for each patch, meta brushes, current canvas, frame directory,
-    and whether there is a border (if intermediate painting results are required).
-    Output the painting results of adding the corresponding strokes on the current canvas.
-    Args:
-        param: a tensor with shape batch size x patch along height dimension x patch along width dimension
-         x n_stroke_per_patch x n_param_per_stroke
-        decision: a 01 tensor with shape batch size x patch along height dimension x patch along width dimension
-         x n_stroke_per_patch
-        meta_brushes: a tensor with shape 2 x 3 x meta_brush_height x meta_brush_width.
-        The first slice on the batch dimension denotes vertical brush and the second one denotes horizontal brush.
-        cur_canvas: a tensor with shape batch size x 3 x H x W,
-         where H and W denote height and width of padded results of original images.
-        frame_dir: directory to save intermediate painting results. None means intermediate results are not required.
-        has_border: on the last painting layer, in order to make sure that the painting results do not miss
-         any important detail, we choose to paint again on this layer but shift patch_size // 2 pixels when
-         cutting patches. In this case, if intermediate results are required, we need to cut the shifted length
-         on the border before saving, or there would be a black border.
-        original_h: to indicate the original height for cropping when saving intermediate results.
-        original_w: to indicate the original width for cropping when saving intermediate results.
+def latent2stroke2(param, H,W, model, device):
+    # param: b, 10 (latent) + 3 (RGB)
+    trn_resize = torchvision.transforms.Resize([H+40,W+40])
+    trn_crop= torchvision.transforms.CenterCrop([H,W])
+    trn_ToPIL = torchvision.transforms.ToPILImage(mode='CMYK')
+    trn_ToTensor = torchvision.transforms.ToTensor()
+    b = param.shape[0]
+#         print(param[:,:-3].shape)
+#         with torch.no_grad():
+    param_latent = (param[:,:5] / torch.norm(param[:,:5],dim=1).unsqueeze(1))*2
+    # if 'coarse_to_fine' not in self.opt.strategy:
+    #     if not details:
+    # c = torch.zeros(param.shape[0])#.cuda()
+    #         orig_img = self.generative_model.sample(param_latent, c) ### this outputs bx1xHxW image
+    #     else:
+    #         c = torch.ones(param.shape[0]).cuda()   ## pen
+    #         orig_img = self.generative_model_details.sample(param_latent, c) ### this outputs bx1xHxW image
+    # else:
+    c = network.SignWithSigmoidGrad.apply(param[:,-5])  
+    # print(param_latent.shape, c.shape)
+    orig_img = model.sample(param_latent, c) ### this outputs bx1xHxW image
+    orig_img = trn_crop(trn_resize(orig_img))
+    # if not details: 
+    #     EPS = EPS1
+    # else:
+    #     EPS = EPS2
+    matte = (orig_img>EPS).float()
+    cmyk = matte.repeat(1,4,1,1)
+    alpha = orig_img
+    binary = (orig_img>EPS).float()
 
-    Returns:
-        cur_canvas: a tensor with shape batch size x 3 x H x W, denoting painting results.
-    """
-    # param: b, h, w, stroke_per_patch, param_per_stroke
-    # decision: b, h, w, stroke_per_patch
-    b, h, w, s, p = param.shape
-    H, W = cur_canvas.shape[-2:]
-    is_odd_y = h % 2 == 1
-    is_odd_x = w % 2 == 1
-    patch_size_y = 2 * H // h
-    patch_size_x = 2 * W // w
-    even_idx_y = torch.arange(0, h, 2, device=cur_canvas.device)
-    even_idx_x = torch.arange(0, w, 2, device=cur_canvas.device)
-    odd_idx_y = torch.arange(1, h, 2, device=cur_canvas.device)
-    odd_idx_x = torch.arange(1, w, 2, device=cur_canvas.device)
-    even_y_even_x_coord_y, even_y_even_x_coord_x = torch.meshgrid([even_idx_y, even_idx_x])
-    odd_y_odd_x_coord_y, odd_y_odd_x_coord_x = torch.meshgrid([odd_idx_y, odd_idx_x])
-    even_y_odd_x_coord_y, even_y_odd_x_coord_x = torch.meshgrid([even_idx_y, odd_idx_x])
-    odd_y_even_x_coord_y, odd_y_even_x_coord_x = torch.meshgrid([odd_idx_y, even_idx_x])
-    cur_canvas = F.pad(cur_canvas, [patch_size_x // 4, patch_size_x // 4,
-                                    patch_size_y // 4, patch_size_y // 4, 0, 0, 0, 0])
-
-    def partial_render(this_canvas, patch_coord_y, patch_coord_x, stroke_id):
-        canvas_patch = F.unfold(this_canvas, (patch_size_y, patch_size_x),
-                                stride=(patch_size_y // 2, patch_size_x // 2))
-        # canvas_patch: b, 3 * py * px, h * w
-        canvas_patch = canvas_patch.view(b, 3, patch_size_y, patch_size_x, h, w).contiguous()
-        canvas_patch = canvas_patch.permute(0, 4, 5, 1, 2, 3).contiguous()
-        # canvas_patch: b, h, w, 3, py, px
-        selected_canvas_patch = canvas_patch[:, patch_coord_y, patch_coord_x, :, :, :]
-        selected_h, selected_w = selected_canvas_patch.shape[1:3]
-        selected_param = param[:, patch_coord_y, patch_coord_x, stroke_id, :].view(-1, p).contiguous()
-        selected_decision = decision[:, patch_coord_y, patch_coord_x, stroke_id].view(-1).contiguous()
-        selected_foregrounds = torch.zeros(selected_param.shape[0], 3, patch_size_y, patch_size_x,
-                                           device=this_canvas.device)
-        selected_alphas = torch.zeros(selected_param.shape[0], 3, patch_size_y, patch_size_x, device=this_canvas.device)
-        if selected_param[selected_decision, :].shape[0] > 0:
-            selected_foregrounds[selected_decision, :, :, :], selected_alphas[selected_decision, :, :, :] = \
-                latent2stroke(selected_param[selected_decision, :], patch_size_y, patch_size_x, generative_model)
-        selected_foregrounds = selected_foregrounds.view(
-            b, selected_h, selected_w, 3, patch_size_y, patch_size_x).contiguous()
-        selected_alphas = selected_alphas.view(b, selected_h, selected_w, 3, patch_size_y, patch_size_x).contiguous()
-        selected_decision = selected_decision.view(b, selected_h, selected_w, 1, 1, 1).contiguous()
-        selected_canvas_patch = selected_foregrounds * selected_alphas * selected_decision + selected_canvas_patch * (
-                1 - selected_alphas * selected_decision)
-        this_canvas = selected_canvas_patch.permute(0, 3, 1, 4, 2, 5).contiguous()
-        # this_canvas: b, 3, selected_h, py, selected_w, px
-        this_canvas = this_canvas.view(b, 3, selected_h * patch_size_y, selected_w * patch_size_x).contiguous()
-        # this_canvas: b, 3, selected_h * py, selected_w * px
-        return this_canvas
-
-    global idx
-    if has_border:
-        factor = 2
-    else:
-        factor = 4    # b = param.shape[0]
-
-    if even_idx_y.shape[0] > 0 and even_idx_x.shape[0] > 0:
-        for i in range(s):
-            canvas = partial_render(cur_canvas, even_y_even_x_coord_y, even_y_even_x_coord_x, i)
-            if not is_odd_y:
-                canvas = torch.cat([canvas, cur_canvas[:, :, -patch_size_y // 2:, :canvas.shape[3]]], dim=2)
-            if not is_odd_x:
-                canvas = torch.cat([canvas, cur_canvas[:, :, :canvas.shape[2], -patch_size_x // 2:]], dim=3)
-            cur_canvas = canvas
-            idx += 1
-            if frame_dir is not None:
-                frame = crop(cur_canvas[:, :, patch_size_y // factor:-patch_size_y // factor,
-                             patch_size_x // factor:-patch_size_x // factor], original_h, original_w)
-                save_img(frame[0], os.path.join(frame_dir, '%03d.jpg' % idx))
-
-    if odd_idx_y.shape[0] > 0 and odd_idx_x.shape[0] > 0:
-        for i in range(s):
-            canvas = partial_render(cur_canvas, odd_y_odd_x_coord_y, odd_y_odd_x_coord_x, i)
-            canvas = torch.cat([cur_canvas[:, :, :patch_size_y // 2, -canvas.shape[3]:], canvas], dim=2)
-            canvas = torch.cat([cur_canvas[:, :, -canvas.shape[2]:, :patch_size_x // 2], canvas], dim=3)
-            if is_odd_y:
-                canvas = torch.cat([canvas, cur_canvas[:, :, -patch_size_y // 2:, :canvas.shape[3]]], dim=2)
-            if is_odd_x:
-                canvas = torch.cat([canvas, cur_canvas[:, :, :canvas.shape[2], -patch_size_x // 2:]], dim=3)
-            cur_canvas = canvas
-            idx += 1
-            if frame_dir is not None:
-                frame = crop(cur_canvas[:, :, patch_size_y // factor:-patch_size_y // factor,
-                             patch_size_x // factor:-patch_size_x // factor], original_h, original_w)
-                save_img(frame[0], os.path.join(frame_dir, '%03d.jpg' % idx))
-
-    if odd_idx_y.shape[0] > 0 and even_idx_x.shape[0] > 0:
-        for i in range(s):
-            canvas = partial_render(cur_canvas, odd_y_even_x_coord_y, odd_y_even_x_coord_x, i)
-            canvas = torch.cat([cur_canvas[:, :, :patch_size_y // 2, :canvas.shape[3]], canvas], dim=2)
-            if is_odd_y:
-                canvas = torch.cat([canvas, cur_canvas[:, :, -patch_size_y // 2:, :canvas.shape[3]]], dim=2)
-            if not is_odd_x:
-                canvas = torch.cat([canvas, cur_canvas[:, :, :canvas.shape[2], -patch_size_x // 2:]], dim=3)
-            cur_canvas = canvas
-            idx += 1
-            if frame_dir is not None:
-                frame = crop(cur_canvas[:, :, patch_size_y // factor:-patch_size_y // factor,
-                             patch_size_x // factor:-patch_size_x // factor], original_h, original_w)
-                save_img(frame[0], os.path.join(frame_dir, '%03d.jpg' % idx))
-
-    if even_idx_y.shape[0] > 0 and odd_idx_x.shape[0] > 0:
-        for i in range(s):
-            canvas = partial_render(cur_canvas, even_y_odd_x_coord_y, even_y_odd_x_coord_x, i)
-            canvas = torch.cat([cur_canvas[:, :, :canvas.shape[2], :patch_size_x // 2], canvas], dim=3)
-            if not is_odd_y:
-                canvas = torch.cat([canvas, cur_canvas[:, :, -patch_size_y // 2:, -canvas.shape[3]:]], dim=2)
-            if is_odd_x:
-                canvas = torch.cat([canvas, cur_canvas[:, :, :canvas.shape[2], -patch_size_x // 2:]], dim=3)
-            cur_canvas = canvas
-            idx += 1
-            if frame_dir is not None:
-                frame = crop(cur_canvas[:, :, patch_size_y // factor:-patch_size_y // factor,
-                             patch_size_x // factor:-patch_size_x // factor], original_h, original_w)
-                save_img(frame[0], os.path.join(frame_dir, '%03d.jpg' % idx))
-
-    cur_canvas = cur_canvas[:, :, patch_size_y // 4:-patch_size_y // 4, patch_size_x // 4:-patch_size_x // 4]
-
-    return cur_canvas
+    color = (1+param[:,-4:]).unsqueeze(2).unsqueeze(3)/2
+    # if not details:
+    matte_color = cmyk*color*alpha
+    # else:
+    #     matte_color = cmyk*color
+    return matte_color, binary
 
 
-def param2img_parallel(param, decision, generative_model, cur_canvas):
-    """
-        Input stroke parameters and decisions for each patch, meta brushes, current canvas, frame directory,
-        and whether there is a border (if intermediate painting results are required).
-        Output the painting results of adding the corresponding strokes on the current canvas.
-        Args:
-            param: a tensor with shape batch size x patch along height dimension x patch along width dimension
-             x n_stroke_per_patch x n_param_per_stroke
-            decision: a 01 tensor with shape batch size x patch along height dimension x patch along width dimension
-             x n_stroke_per_patch
-            meta_brushes: a tensor with shape 2 x 3 x meta_brush_height x meta_brush_width.
-            The first slice on the batch dimension denotes vertical brush and the second one denotes horizontal brush.
-            cur_canvas: a tensor with shape batch size x 3 x H x W,
-             where H and W denote height and width of padded results of original images.
 
-        Returns:
-            cur_canvas: a tensor with shape batch size x 3 x H x W, denoting painting results.
-        """
-    # param: b, h, w, stroke_per_patch, param_per_stroke
-    # decision: b, h, w, stroke_per_patch
-    b, h, w, s, p = param.shape
-    param = param.view(-1, 8).contiguous()
-    decision = decision.view(-1).contiguous().bool()
-    H, W = cur_canvas.shape[-2:]
-    is_odd_y = h % 2 == 1
-    is_odd_x = w % 2 == 1
-    patch_size_y = 2 * H // h
-    patch_size_x = 2 * W // w
-    even_idx_y = torch.arange(0, h, 2, device=cur_canvas.device)
-    even_idx_x = torch.arange(0, w, 2, device=cur_canvas.device)
-    odd_idx_y = torch.arange(1, h, 2, device=cur_canvas.device)
-    odd_idx_x = torch.arange(1, w, 2, device=cur_canvas.device)
-    even_y_even_x_coord_y, even_y_even_x_coord_x = torch.meshgrid([even_idx_y, even_idx_x])
-    odd_y_odd_x_coord_y, odd_y_odd_x_coord_x = torch.meshgrid([odd_idx_y, odd_idx_x])
-    even_y_odd_x_coord_y, even_y_odd_x_coord_x = torch.meshgrid([even_idx_y, odd_idx_x])
-    odd_y_even_x_coord_y, odd_y_even_x_coord_x = torch.meshgrid([odd_idx_y, even_idx_x])
-    cur_canvas = F.pad(cur_canvas, [patch_size_x // 4, patch_size_x // 4,
-                                    patch_size_y // 4, patch_size_y // 4, 0, 0, 0, 0])
-    foregrounds = torch.zeros(param.shape[0], 3, patch_size_y, patch_size_x, device=cur_canvas.device)
-    alphas = torch.zeros(param.shape[0], 3, patch_size_y, patch_size_x, device=cur_canvas.device)
-    valid_foregrounds, valid_alphas = latent2stroke(param[decision, :], patch_size_y, patch_size_x, generative_model)
-    foregrounds[decision, :, :, :] = valid_foregrounds
-    alphas[decision, :, :, :] = valid_alphas
-    # foreground, alpha: b * h * w * stroke_per_patch, 3, patch_size_y, patch_size_x
-    foregrounds = foregrounds.view(-1, h, w, s, 3, patch_size_y, patch_size_x).contiguous()
-    alphas = alphas.view(-1, h, w, s, 3, patch_size_y, patch_size_x).contiguous()
-    # foreground, alpha: b, h, w, stroke_per_patch, 3, render_size_y, render_size_x
-    decision = decision.view(-1, h, w, s, 1, 1, 1).contiguous()
-
-    # decision: b, h, w, stroke_per_patch, 1, 1, 1
-
-    def partial_render(this_canvas, patch_coord_y, patch_coord_x):
-
-        canvas_patch = F.unfold(this_canvas, (patch_size_y, patch_size_x),
-                                stride=(patch_size_y // 2, patch_size_x // 2))
-        # canvas_patch: b, 3 * py * px, h * w
-        canvas_patch = canvas_patch.view(b, 3, patch_size_y, patch_size_x, h, w).contiguous()
-        canvas_patch = canvas_patch.permute(0, 4, 5, 1, 2, 3).contiguous()
-        # canvas_patch: b, h, w, 3, py, px
-        selected_canvas_patch = canvas_patch[:, patch_coord_y, patch_coord_x, :, :, :]
-        selected_foregrounds = foregrounds[:, patch_coord_y, patch_coord_x, :, :, :, :]
-        selected_alphas = alphas[:, patch_coord_y, patch_coord_x, :, :, :, :]
-        selected_decisions = decision[:, patch_coord_y, patch_coord_x, :, :, :, :]
-        for i in range(s):
-            cur_foreground = selected_foregrounds[:, :, :, i, :, :, :]
-            cur_alpha = selected_alphas[:, :, :, i, :, :, :]
-            cur_decision = selected_decisions[:, :, :, i, :, :, :]
-            selected_canvas_patch = cur_foreground * cur_alpha * cur_decision + selected_canvas_patch * (
-                    1 - cur_alpha * cur_decision)
-        this_canvas = selected_canvas_patch.permute(0, 3, 1, 4, 2, 5).contiguous()
-        # this_canvas: b, 3, h_half, py, w_half, px
-        h_half = this_canvas.shape[2]
-        w_half = this_canvas.shape[4]
-        this_canvas = this_canvas.view(b, 3, h_half * patch_size_y, w_half * patch_size_x).contiguous()
-        # this_canvas: b, 3, h_half * py, w_half * px
-        return this_canvas
-
-    if even_idx_y.shape[0] > 0 and even_idx_x.shape[0] > 0:
-        canvas = partial_render(cur_canvas, even_y_even_x_coord_y, even_y_even_x_coord_x)
-        if not is_odd_y:
-            canvas = torch.cat([canvas, cur_canvas[:, :, -patch_size_y // 2:, :canvas.shape[3]]], dim=2)
-        if not is_odd_x:
-            canvas = torch.cat([canvas, cur_canvas[:, :, :canvas.shape[2], -patch_size_x // 2:]], dim=3)
-        cur_canvas = canvas
-
-    if odd_idx_y.shape[0] > 0 and odd_idx_x.shape[0] > 0:
-        canvas = partial_render(cur_canvas, odd_y_odd_x_coord_y, odd_y_odd_x_coord_x)
-        canvas = torch.cat([cur_canvas[:, :, :patch_size_y // 2, -canvas.shape[3]:], canvas], dim=2)
-        canvas = torch.cat([cur_canvas[:, :, -canvas.shape[2]:, :patch_size_x // 2], canvas], dim=3)
-        if is_odd_y:
-            canvas = torch.cat([canvas, cur_canvas[:, :, -patch_size_y // 2:, :canvas.shape[3]]], dim=2)
-        if is_odd_x:
-            canvas = torch.cat([canvas, cur_canvas[:, :, :canvas.shape[2], -patch_size_x // 2:]], dim=3)
-        cur_canvas = canvas
-
-    if odd_idx_y.shape[0] > 0 and even_idx_x.shape[0] > 0:
-        canvas = partial_render(cur_canvas, odd_y_even_x_coord_y, odd_y_even_x_coord_x)
-        canvas = torch.cat([cur_canvas[:, :, :patch_size_y // 2, :canvas.shape[3]], canvas], dim=2)
-        if is_odd_y:
-            canvas = torch.cat([canvas, cur_canvas[:, :, -patch_size_y // 2:, :canvas.shape[3]]], dim=2)
-        if not is_odd_x:
-            canvas = torch.cat([canvas, cur_canvas[:, :, :canvas.shape[2], -patch_size_x // 2:]], dim=3)
-        cur_canvas = canvas
-
-    if even_idx_y.shape[0] > 0 and odd_idx_x.shape[0] > 0:
-        canvas = partial_render(cur_canvas, even_y_odd_x_coord_y, even_y_odd_x_coord_x)
-        canvas = torch.cat([cur_canvas[:, :, :canvas.shape[2], :patch_size_x // 2], canvas], dim=3)
-        if not is_odd_y:
-            canvas = torch.cat([canvas, cur_canvas[:, :, -patch_size_y // 2:, -canvas.shape[3]:]], dim=2)
-        if is_odd_x:
-            canvas = torch.cat([canvas, cur_canvas[:, :, :canvas.shape[2], -patch_size_x // 2:]], dim=3)
-        cur_canvas = canvas
-
-    cur_canvas = cur_canvas[:, :, patch_size_y // 4:-patch_size_y // 4, patch_size_x // 4:-patch_size_x // 4]
-
-    return cur_canvas
 
 
 def read_img(img_path, img_type='RGB', h=None, w=None):
@@ -502,9 +391,9 @@ def crop(img, h, w):
     return img
 
 
-def main(input_path, model_path, output_dir, generative = True, need_animation=False, resize_h=None, resize_w=None, repeat_num = 10, serial=False):
+def main(input_path, model_path, c_dim, generative_path, output_dir, generative = True, need_animation=False, resize_h=None, resize_w=None, repeat_num = 10, stroke_num = 10, serial=False, decision_switch=True):
     if not os.path.exists(output_dir):
-        os.mkdir(output_dir)
+        os.makedirs(output_dir)
     input_name = os.path.basename(input_path)
     output_path = os.path.join(output_dir, input_name)
     frame_dir = None
@@ -514,12 +403,12 @@ def main(input_path, model_path, output_dir, generative = True, need_animation=F
             serial = True
         frame_dir = os.path.join(output_dir, input_name[:input_name.find('.')])
         if not os.path.exists(frame_dir):
-            os.mkdir(frame_dir)
-    stroke_num = 20
-    # device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+            os.makedirs(frame_dir)
+    # device = torch.device("cuda:7" if torch.cuda.is_available() else "cpu")
     device = "cpu"
-    net_g = network.Painter(8, stroke_num, 256, 8, 3, 3).to(device)
+    net_g = network.Painter(8, stroke_num, 256, 8, 3, 3,largesmall=1).to(device)
     net_g.load_state_dict(torch.load(model_path))
+    
     net_g.eval()
     for param in net_g.parameters():
         param.requires_grad = False
@@ -530,18 +419,21 @@ def main(input_path, model_path, output_dir, generative = True, need_animation=F
         meta_brushes = torch.cat(
             [brush_large_vertical, brush_large_horizontal], dim=0)
     else:
-        model = BetaVAE_B_256(z_dim=5, nc=1)       
-        state = torch.load(os.path.join('../train/strokes_aug_gamma100_z5_size256_iter_400000.pt'),map_location='cpu')        
+        # model = BetaVAE_B_256_Conditional(z_dim=5, c_dim=2, nc=1)       
+        # state = torch.load(os.path.join('../train/strokes_alpha_gamma100_z5_c2_size256_last.pt'),map_location='cpu')        
+        # model.load_state_dict(state['model_states']['net'])
+        model = BetaVAE_B_256_Conditional(z_dim=5, c_dim = c_dim, nc=1)       
+        state = torch.load(os.path.join(generative_path),map_location='cpu')        
         model.load_state_dict(state['model_states']['net'])
         for param in model.parameters():
-            print(param, param.requires_grad)
+            # print(param, param.requires_grad)
             param.requires_grad = False
             
         generative_model = model.to(device)
 
 
     with torch.no_grad():
-        original_img = read_img(input_path, 'RGB', resize_h, resize_w).to(device)  # 이미지 읽어옴
+        original_img = read_img(input_path, 'CMYK', resize_h, resize_w).to(device)  # 이미지 읽어옴
         # original_h, original_w = original_img.shape[-2:]  # 이미지 shape checking
         # K = max(math.ceil(math.log2(max(original_h, original_w) / patch_size)), 0) 
         # original_img_pad_size = patch_size * (2 ** K)  
@@ -563,6 +455,7 @@ def main(input_path, model_path, output_dir, generative = True, need_animation=F
             # result_patch = result_patch.permute(0, 2, 1).contiguous().view(
             #     -1, 3, patch_size, patch_size).contiguous()
             # save_img(final_result[0], frame_dir, "input_result_{}.png".format(repeat))
+            
             param, decisions = net_g(original_img, final_result)
             # print(param.shape, decisions.shape)
             # print(self.net_g.linear_param[0].weight)
@@ -573,25 +466,36 @@ def main(input_path, model_path, output_dir, generative = True, need_animation=F
             # decision: b, stroke_per_patch, 1
             # pred_decision = decisions.view(-1, stroke_num).contiguous()
             # pred_param = param[:, :, :8]
-            param = param.view(-1, 8).contiguous()
-            foregrounds, alphas = latent2stroke(param, resize_h, resize_w, generative_model)
-
+            param = param.view(-1, 10).contiguous()
+            foregrounds, alphas = latent2stroke2(param, resize_h, resize_w, generative_model, device)
+            # print(foregrounds.shape)
+            # for j in range(foregrounds.shape[0]):
+            #     save_img(foregrounds[j], frame_dir, "debug_{:05d}.png".format(j))
+            # raise("debugging")
             # foreground, alpha: b * stroke_per_patch, 3, output_size, output_size
-            foregrounds = foregrounds.view(-1, stroke_num, 3, resize_h, resize_w)
-            alphas = alphas.view(-1, stroke_num, 3, resize_h, resize_w)
+            foregrounds = foregrounds.view(-1, stroke_num, 4, resize_h, resize_w)
+            alphas = alphas.view(-1, stroke_num, 1, resize_h, resize_w)
             # foreground, alpha: b, stroke_per_patch, 3, output_size, output_size
             decisions = network.SignWithSigmoidGrad.apply(decisions.view(-1, stroke_num, 1, 1, 1).contiguous())
             # print('decisions',decisions)
             # self.rec = self.old.clone()
+            # print(foregrounds.shape)
             for j in range(foregrounds.shape[1]):
                 foreground = foregrounds[:, j, :, :, :]
                 alpha = alphas[:, j, :, :, :]
                 decision = decisions[:, j, :, :, :]
                 # print((alpha==0).all())
                 # print(foreground.shape, decision.shape, alpha.shape)
-                final_result = foreground * alpha * decision + final_result * (1 - alpha * decision)
+                # self.rec_content_wc = torch.clip(content_wc*decision+ self.rec_content_wc, torch.min(content_wc,self.rec_content_wc),torch.max(content_wc,self.rec_content_wc))
+                if decision_switch:
+                    final_result = torch.clip(foreground*decision + final_result, torch.min(foreground, final_result), torch.max(foreground, final_result))
+                else:
+                    final_result = torch.clip(foreground + final_result, torch.min(foreground, final_result), torch.max(foreground, final_result))
             if repeat%1 ==0:
                 save_img(final_result[0], frame_dir, "repeat_{:05d}.png".format(repeat))
+        command = 'convert {}/*.png {}/{}.gif'.format(frame_dir, frame_dir, input_name[:input_name.find('.')])
+        print("converting to {}.gif".format(input_name[:input_name.find('.')]))
+        os.system(command)
 
 
 
@@ -637,16 +541,26 @@ def main(input_path, model_path, output_dir, generative = True, need_animation=F
 
 
 if __name__ == '__main__':
-    main(input_path='../picture/ocean.png',
-         model_path='../train/checkpoints/painter_generative_GTstroke_20_background_upto100/latest_net_g.pth',
-         output_dir='output/painter_generative_GTstroke_20_background_upto100/',
-         generative=True,
-         need_animation=True,  # whether need intermediate results for animation.
-         resize_h=256,         # resize original input to this size. None means do not resize.
-         resize_w=256,         # resize original input to this size. None means do not resize.
-         repeat_num = 100,
-         serial=True)          # if need animation, serial must be True.
-
-
+    pic_list = ['1','2','3','starry_night','gradient','ocean','jennifer']
+    # pic_list = ['jennifer']]
+    model_path = '../train/checkpoints/ORIGINAL_stroke32_gt100_pix50_dec10_largesmall/latest_net_g.pth'
+    output_dir = 'output/ORIGINAL_stroke32_gt100_pix50_dec10_largesmall/epoch110'
+    generative_path = '../train/markers_large_small_gamma100_z5_c3_size256_last.pt'
+    for i in pic_list:
+        main(input_path='../picture/{}.jpg'.format(i),
+            model_path=model_path,
+            c_dim = 3, 
+            generative_path = generative_path,
+            output_dir=output_dir,
+            generative=True,
+            need_animation=True,  # whether need intermediate results for animation.
+            resize_h=256,         # resize original input to this size. None means do not resize.
+            resize_w=256,         # resize original input to this size. None means do not resize.
+            repeat_num = 40,
+            stroke_num = 32, 
+            serial=True,
+            decision_switch = False)          # if need animation, serial must be True.
+    command = 'zip -r {}.zip {}'.format(output_dir, output_dir)
+    os.system(command)
 
 ## delete 618th

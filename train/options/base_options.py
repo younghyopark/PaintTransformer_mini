@@ -34,8 +34,8 @@ class BaseOptions:
                             help='# of input image channels: 3 for RGB and 1 for grayscale')
         parser.add_argument('--output_nc', type=int, default=3,
                             help='# of output image channels: 3 for RGB and 1 for grayscale')
-        parser.add_argument('--ngf', type=int, default=256, help='# of gen filters in the first conv layer')
-        parser.add_argument('--layer_num', type=int, default=2, help='# of resnet block for generator')
+        parser.add_argument('--ngf', type=int, default=512, help='# of gen filters in the first conv layer')
+        parser.add_argument('--layer_num', type=int, default=3, help='# of resnet block for generator')
         parser.add_argument('--init_type', type=str, default='normal',
                             help='network initialization [normal | xavier | kaiming | orthogonal]')
         parser.add_argument('--init_gain', type=float, default=0.02,

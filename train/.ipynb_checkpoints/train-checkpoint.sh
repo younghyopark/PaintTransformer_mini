@@ -1,0 +1,25 @@
+python train.py \
+--name new_version_iter5_stroke10_gt30_pix50_dec10 \
+--gpu_ids 0 \
+--model painter \
+--dataset_mode null \
+--batch_size 64 \
+--display_freq 25 \
+--print_freq 25 \
+--lr 1e-4 \
+--init_type normal \
+--n_epochs 200 \
+--n_epochs_decay 20 \
+--max_dataset_size 14400 \
+--save_epoch_freq 20 \
+--display_port 8092 \
+--used_strokes 10 \
+--lambda_gt 30 \
+--lambda_decision 10 \
+--lambda_pixel 50 \
+--inference_repeat_num 10 \
+--fake_batch_size 1 \
+--generative \
+--revised \
+--strategy linear_CMYKmax \
+--debug

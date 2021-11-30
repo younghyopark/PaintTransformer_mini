@@ -32,13 +32,26 @@ class TrainOptions(BaseOptions):
         parser.add_argument('--no_html', action='store_true',
                             help='do not save intermediate training results to [opt.checkpoints_dir]/[opt.name]/web/')
         parser.add_argument('--generative', action='store_true')
-        parser.add_argument('--details', action='store_true')
-        parser.add_argument('--revised', action='store_true')
-        parser.add_argument('--revised2', action='store_true')
+        parser.add_argument('--generative_cdim',default=0, type=int)
+        parser.add_argument('--generative_path', default=None, type=str)
+        parser.add_argument('--generative_zdim',default=5, type=int)        
 
+        parser.add_argument('--decide_largesmall',action='store_true')        
+        
         parser.add_argument('--debug', action='store_true')
         parser.add_argument('--strategy', type=str, default=None)   ## 'linear_CMYKmax'
-        # parser.add_argument('--ctf_large_ratio', type=int, default=0.5)   ## 'linear_CMYKmax'
+        
+        parser.add_argument('--long_horizon', action='store_true')
+        parser.add_argument('--simpler_long_horizon', action='store_true')
+        parser.add_argument('--continue_training', action='store_true')
+        parser.add_argument('--continue_path', default=None, type=str)
+        
+        parser.add_argument('--coarse_num', type=int, default=0)   ## 'linear_CMYKmax'
+        parser.add_argument('--fine_num', type=int, default=0)   ## 'linear_CMYKmax'
+        parser.add_argument('--coarse_CMYKmax', type=float, default=0.7)   ## 'linear_CMYKmax'
+        parser.add_argument('--fine_CMYKmin', type=float, default=0.7)   ## 'linear_CMYKmax'
+        parser.add_argument('--fine_CMYKmax', type=float, default=1.0)   ## 'linear_CMYKmax'
+        parser.add_argument('--CMYK_maxclip', type=float, default=0)   ## 'linear_CMYKmax'
 
 
         # network saving and loading parameters

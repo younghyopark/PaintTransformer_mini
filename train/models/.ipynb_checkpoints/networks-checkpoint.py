@@ -51,7 +51,7 @@ def init_net(net, init_type='normal', init_gain=0.02, gpu_ids=()):
     if len(gpu_ids) > 0:
         assert (torch.cuda.is_available())
         net.to(gpu_ids[0])
-        net = torch.nn.DataParallel(net, gpu_ids)  # multi-GPUs
+        # net = torch.nn.DataParallel(net, gpu_ids)  # multi-GPUs
     init_weights(net, init_type, init_gain=init_gain)
     return net
 
@@ -77,11 +77,12 @@ class SignWithSigmoidGrad(torch.autograd.Function):
 
 class Painter(nn.Module):
 
-    def __init__(self, param_per_stroke, total_strokes, hidden_dim, n_heads=8, n_enc_layers=3, n_dec_layers=3):
+    def __init__(self, param_per_stroke, total_strokes, hidden_dim, n_heads=8, n_enc_layers=3, n_dec_layers=3, largesmall=0):
         super().__init__()
+        print(hidden_dim)
         self.enc_img = nn.Sequential(
             nn.ReflectionPad2d(1),
-            nn.Conv2d(3, 32, 3, 1),
+            nn.Conv2d(4, 32, 3, 1),
             nn.BatchNorm2d(32),
             nn.ReLU(True),
             nn.ReflectionPad2d(1),
@@ -91,10 +92,19 @@ class Painter(nn.Module):
             nn.ReflectionPad2d(1),
             nn.Conv2d(64, 128, 3, 2),
             nn.BatchNorm2d(128),
-            nn.ReLU(True))
+            nn.ReLU(True),
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(128, 256, 3, 2),
+            nn.BatchNorm2d(256),
+            nn.ReLU(True),
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(256, 512, 3, 2),
+            nn.BatchNorm2d(512),
+            nn.ReLU(True)
+        )
         self.enc_canvas = nn.Sequential(
             nn.ReflectionPad2d(1),
-            nn.Conv2d(3, 32, 3, 1),
+            nn.Conv2d(4, 32, 3, 1),
             nn.BatchNorm2d(32),
             nn.ReLU(True),
             nn.ReflectionPad2d(1),
@@ -104,18 +114,57 @@ class Painter(nn.Module):
             nn.ReflectionPad2d(1),
             nn.Conv2d(64, 128, 3, 2),
             nn.BatchNorm2d(128),
-            nn.ReLU(True))
-        self.conv = nn.Conv2d(128 * 2, hidden_dim, 1)
+            nn.ReLU(True),
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(128, 256, 3, 2),
+            nn.BatchNorm2d(256),
+            nn.ReLU(True),
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(256, 512, 3, 2),
+            nn.BatchNorm2d(512),
+            nn.ReLU(True)
+        )
+        # self.additional_conv = nn.Sequential(
+        #     nn.Conv2d(512, 512, 3, 2),
+        #     nn.BatchNorm2d(512),
+        #     nn.ReLU(True),
+        #     nn.Conv2d(512, 512, 3, 2),
+        #     nn.BatchNorm2d(512),
+        #     nn.ReLU(True),
+        #     nn.Conv2d(512, 512, 3, 2),
+        #     nn.BatchNorm2d(512),
+        #     nn.ReLU(True),
+        #     nn.Flatten(),
+        #     nn.Linear(hidden_dim, hidden_dim),
+        #     nn.ReLU(True),
+        #     nn.Linear(hidden_dim, hidden_dim//2),
+        #     nn.ReLU(True),
+        #     nn.Linear(hidden_dim//2, 1),
+        # )
+        self.conv = nn.Conv2d(512 * 2, hidden_dim, 1)
         self.transformer = nn.Transformer(hidden_dim, n_heads, n_enc_layers, n_dec_layers)
         self.linear_param = nn.Sequential(
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(True),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(True),
-            nn.Linear(hidden_dim, param_per_stroke),
+            nn.Linear(hidden_dim, hidden_dim//2),
+            nn.ReLU(True),
+            nn.Linear(hidden_dim//2, 5+largesmall),
+            nn.Tanh()
+            )
+        self.linear_color = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(True),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(True),
+            nn.Linear(hidden_dim, hidden_dim//2),
+            nn.ReLU(True),
+            nn.Linear(hidden_dim//2, 4),
             nn.Tanh()
             )
         self.linear_decider = nn.Linear(hidden_dim, 1)
+        # self.linear_largesmall = nn.Linear(hidden_dim,1)
         self.query_pos = nn.Parameter(torch.rand(total_strokes, hidden_dim))
         self.row_embed = nn.Parameter(torch.rand(16, hidden_dim // 2))
         self.col_embed = nn.Parameter(torch.rand(16, hidden_dim // 2))
@@ -125,11 +174,13 @@ class Painter(nn.Module):
         img_feat = self.enc_img(img)
         canvas_feat = self.enc_canvas(canvas)
         h, w = img_feat.shape[-2:]
-        # print(h,w)
+
         feat = torch.cat([img_feat, canvas_feat], dim=1)
         feat_conv = self.conv(feat)
+        # print(feat_conv.shape)
+        # classify = self.additional_conv(feat_conv)
+        # print(classify.shape)
 
-        # print(pos_embed)
         pos_embed = torch.cat([
             self.col_embed[:w].unsqueeze(0).contiguous().repeat(h, 1, 1),
             self.row_embed[:h].unsqueeze(1).contiguous().repeat(1, w, 1),
@@ -137,11 +188,8 @@ class Painter(nn.Module):
         hidden_state = self.transformer(pos_embed + feat_conv.flatten(2).permute(2, 0, 1).contiguous(),
                                         self.query_pos.unsqueeze(1).contiguous().repeat(1, b, 1))
         hidden_state = hidden_state.permute(1, 0, 2).contiguous()
-        param = self.linear_param(hidden_state) * 3
+        param = self.linear_param(hidden_state)
         s = hidden_state.shape[1]
-        grid = param[:, :, :2].view(b * s, 1, 1, 2).contiguous()
-        img_temp = img.unsqueeze(1).contiguous().repeat(1, s, 1, 1, 1).view(b * s, 3, H, W).contiguous()
-        color = nn.functional.grid_sample(img_temp, 2 * grid - 1, align_corners=False).view(b, s, 3).contiguous()
+        color = self.linear_color(hidden_state) 
         decision = self.linear_decider(hidden_state)
-        return torch.cat([param, color, color, torch.rand(b, s, 1, device=img.device)], dim=-1), decision
-    ## returns param b,8,5 color b,8,3 color b,8,3 torch.rand b,8,1 => b,8,12
+        return torch.cat([param, color], dim=-1), decision
