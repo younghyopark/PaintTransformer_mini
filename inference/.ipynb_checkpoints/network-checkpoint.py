@@ -21,13 +21,13 @@ class SignWithSigmoidGrad(torch.autograd.Function):
         return grad_input
 
 
-class Painter(nn.Module):
+class Painter_Original(nn.Module):
 
     def __init__(self, param_per_stroke, total_strokes, hidden_dim, n_heads=8, n_enc_layers=3, n_dec_layers=3):
         super().__init__()
         self.enc_img = nn.Sequential(
             nn.ReflectionPad2d(1),
-            nn.Conv2d(3, 32, 3, 1),
+            nn.Conv2d(4, 32, 3, 1),
             nn.BatchNorm2d(32),
             nn.ReLU(True),
             nn.ReflectionPad2d(1),
@@ -42,7 +42,7 @@ class Painter(nn.Module):
             nn.ReLU(True))
         self.enc_canvas = nn.Sequential(
             nn.ReflectionPad2d(1),
-            nn.Conv2d(3, 32, 3, 1),
+            nn.Conv2d(4, 32, 3, 1),
             nn.BatchNorm2d(32),
             nn.ReLU(True),
             nn.ReflectionPad2d(1),
@@ -70,7 +70,7 @@ class Painter(nn.Module):
             nn.ReLU(True),
             nn.Linear(hidden_dim, hidden_dim),
             nn.ReLU(True),
-            nn.Linear(hidden_dim, 3),
+            nn.Linear(hidden_dim, 4),
             nn.Tanh()
             )
         self.linear_decider = nn.Linear(hidden_dim, 1)
@@ -106,3 +106,123 @@ class Painter(nn.Module):
         return torch.cat([param, color], dim=-1), decision
         # return param, color, decision
     ## returns param b,8,5 color b,8,3 color b,8,3 torch.rand b,8,1 => b,8,12
+
+
+class Painter(nn.Module):
+
+    def __init__(self, param_per_stroke, total_strokes, hidden_dim, n_heads=8, n_enc_layers=3, n_dec_layers=3, largesmall=0):
+        super().__init__()
+        print(hidden_dim)
+        self.enc_img = nn.Sequential(
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(4, 32, 3, 1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(True),
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(32, 64, 3, 2),
+            nn.BatchNorm2d(64),
+            nn.ReLU(True),
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(64, 128, 3, 2),
+            nn.BatchNorm2d(128),
+            nn.ReLU(True),
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(128, 256, 3, 2),
+            nn.BatchNorm2d(256),
+            nn.ReLU(True),
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(256, 512, 3, 2),
+            nn.BatchNorm2d(512),
+            nn.ReLU(True)
+        )
+        self.enc_canvas = nn.Sequential(
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(4, 32, 3, 1),
+            nn.BatchNorm2d(32),
+            nn.ReLU(True),
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(32, 64, 3, 2),
+            nn.BatchNorm2d(64),
+            nn.ReLU(True),
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(64, 128, 3, 2),
+            nn.BatchNorm2d(128),
+            nn.ReLU(True),
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(128, 256, 3, 2),
+            nn.BatchNorm2d(256),
+            nn.ReLU(True),
+            nn.ReflectionPad2d(1),
+            nn.Conv2d(256, 512, 3, 2),
+            nn.BatchNorm2d(512),
+            nn.ReLU(True)
+        )
+        # self.additional_conv = nn.Sequential(
+        #     nn.Conv2d(512, 512, 3, 2),
+        #     nn.BatchNorm2d(512),
+        #     nn.ReLU(True),
+        #     nn.Conv2d(512, 512, 3, 2),
+        #     nn.BatchNorm2d(512),
+        #     nn.ReLU(True),
+        #     nn.Conv2d(512, 512, 3, 2),
+        #     nn.BatchNorm2d(512),
+        #     nn.ReLU(True),
+        #     nn.Flatten(),
+        #     nn.Linear(hidden_dim, hidden_dim),
+        #     nn.ReLU(True),
+        #     nn.Linear(hidden_dim, hidden_dim//2),
+        #     nn.ReLU(True),
+        #     nn.Linear(hidden_dim//2, 1),
+        # )
+        self.conv = nn.Conv2d(512 * 2, hidden_dim, 1)
+        self.transformer = nn.Transformer(hidden_dim, n_heads, n_enc_layers, n_dec_layers)
+        self.linear_param = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(True),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(True),
+            nn.Linear(hidden_dim, hidden_dim//2),
+            nn.ReLU(True),
+            nn.Linear(hidden_dim//2, 5+largesmall),
+            nn.Tanh()
+            )
+        self.linear_color = nn.Sequential(
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(True),
+            nn.Linear(hidden_dim, hidden_dim),
+            nn.ReLU(True),
+            nn.Linear(hidden_dim, hidden_dim//2),
+            nn.ReLU(True),
+            nn.Linear(hidden_dim//2, 4),
+            nn.Tanh()
+            )
+        self.linear_decider = nn.Linear(hidden_dim, 1)
+        # self.linear_largesmall = nn.Linear(hidden_dim,1)
+        self.query_pos = nn.Parameter(torch.rand(total_strokes, hidden_dim))
+        self.row_embed = nn.Parameter(torch.rand(16, hidden_dim // 2))
+        self.col_embed = nn.Parameter(torch.rand(16, hidden_dim // 2))
+
+    def forward(self, img, canvas):
+        b, _, H, W = img.shape
+        img_feat = self.enc_img(img)
+        canvas_feat = self.enc_canvas(canvas)
+        h, w = img_feat.shape[-2:]
+
+        feat = torch.cat([img_feat, canvas_feat], dim=1)
+        feat_conv = self.conv(feat)
+        # print(feat_conv.shape)
+        # classify = self.additional_conv(feat_conv)
+        # print(classify.shape)
+
+        pos_embed = torch.cat([
+            self.col_embed[:w].unsqueeze(0).contiguous().repeat(h, 1, 1),
+            self.row_embed[:h].unsqueeze(1).contiguous().repeat(1, w, 1),
+        ], dim=-1).flatten(0, 1).unsqueeze(1)
+        hidden_state = self.transformer(pos_embed + feat_conv.flatten(2).permute(2, 0, 1).contiguous(),
+                                        self.query_pos.unsqueeze(1).contiguous().repeat(1, b, 1))
+        hidden_state = hidden_state.permute(1, 0, 2).contiguous()
+        param = self.linear_param(hidden_state)
+        s = hidden_state.shape[1]
+        color = self.linear_color(hidden_state) 
+        decision = self.linear_decider(hidden_state)
+        return torch.cat([param, color], dim=-1), decision

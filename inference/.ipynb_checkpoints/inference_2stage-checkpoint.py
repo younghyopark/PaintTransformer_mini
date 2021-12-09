@@ -12,6 +12,7 @@ import torchvision
 from tqdm import tqdm
 from PIL import ImageFont
 from PIL import ImageDraw 
+import json
 
 
 idx = 0
@@ -237,84 +238,7 @@ def save_img(img, output_path, name):
     result.save(os.path.join(output_path, name))
 
 
-def param2stroke(param, H, W, meta_brushes):
-    """
-    Input a set of stroke parameters and output its corresponding foregrounds and alpha maps.
-    Args:
-        param: a tensor with shape n_strokes x n_param_per_stroke. Here, param_per_stroke is 8:
-        x_center, y_center, width, height, theta, R, G, and B.
-        H: output height.
-        W: output width.
-        meta_brushes: a tensor with shape 2 x 3 x meta_brush_height x meta_brush_width.
-         The first slice on the batch dimension denotes vertical brush and the second one denotes horizontal brush.
-
-    Returns:
-        foregrounds: a tensor with shape n_strokes x 3 x H x W, containing color information.
-        alphas: a tensor with shape n_strokes x 3 x H x W,
-         containing binary information of whether a pixel is belonging to the stroke (alpha mat), for painting process.
-    """
-    # Firstly, resize the meta brushes to the required shape,
-    # in order to decrease GPU memory especially when the required shape is small.
-    meta_brushes_resize = F.interpolate(meta_brushes, (H, W))
-    b = param.shape[0]
-    # Extract shape parameters and color parameters.
-    param_list = torch.split(param, 1, dim=1)
-    x0, y0, w, h, theta = [item.squeeze(-1) for item in param_list[:5]]
-    R, G, B = param_list[5:]
-    # Pre-compute sin theta and cos theta
-    sin_theta = torch.sin(torch.acos(torch.tensor(-1., device=param.device)) * theta)
-    cos_theta = torch.cos(torch.acos(torch.tensor(-1., device=param.device)) * theta)
-    # index means each stroke should use which meta stroke? Vertical meta stroke or horizontal meta stroke.
-    # When h > w, vertical stroke should be used. When h <= w, horizontal stroke should be used.
-    index = torch.full((b,), -1, device=param.device, dtype=torch.long)
-    index[h > w] = 0
-    index[h <= w] = 1
-    brush = meta_brushes_resize[index.long()]
-
-    # Calculate warp matrix according to the rules defined by pytorch, in order for warping.
-    warp_00 = cos_theta / w
-    warp_01 = sin_theta * H / (W * w)
-    warp_02 = (1 - 2 * x0) * cos_theta / w + (1 - 2 * y0) * sin_theta * H / (W * w)
-    warp_10 = -sin_theta * W / (H * h)
-    warp_11 = cos_theta / h
-    warp_12 = (1 - 2 * y0) * cos_theta / h - (1 - 2 * x0) * sin_theta * W / (H * h)
-    warp_0 = torch.stack([warp_00, warp_01, warp_02], dim=1)
-    warp_1 = torch.stack([warp_10, warp_11, warp_12], dim=1)
-    warp = torch.stack([warp_0, warp_1], dim=1)
-    # Conduct warping.
-    grid = F.affine_grid(warp, [b, 3, H, W], align_corners=False)
-    brush = F.grid_sample(brush, grid, align_corners=False)
-    # alphas is the binary information suggesting whether a pixel is belonging to the stroke.
-    alphas = (brush > 0).float()
-    brush = brush.repeat(1, 3, 1, 1)
-    alphas = alphas.repeat(1, 3, 1, 1)
-    # Give color to foreground strokes.
-    color_map = torch.cat([R, G, B], dim=1)
-    color_map = color_map.unsqueeze(-1).unsqueeze(-1).repeat(1, 1, H, W)
-    foreground = brush * color_map
-    # Dilation and erosion are used for foregrounds and alphas respectively to prevent artifacts on stroke borders.
-    foreground = morphology.dilation(foreground)
-    alphas = morphology.erosion(alphas)
-    return foreground, alphas
-
-
-def latent2stroke(param, H,W, model):
-    # param: b, 10 (latent) + 3 (RGB)
-    T = torchvision.transforms.Resize([H,W])
-    # b = param.shape[0]
-    param_latent = (param[:,:5] / torch.norm(param[:,:5],dim=1).unsqueeze(1))*2
-    img = model.sample(param_latent) ### this outputs bx3xHxW image
-    img = T(img)
-    img = img.repeat(1,3,1,1)
-    alphas = (img>0.1).float()
-    img = alphas*img
-    rgb = (1+param[:,5:8]).unsqueeze(2).unsqueeze(3)/2
-    brush = img*rgb
-
-    return brush, alphas
-
-
-def latent2stroke2(param, H,W, model, device):
+def latent2stroke2(param, H,W, model, device, decide_largesmall, choice=None):
     # param: b, 10 (latent) + 3 (RGB)
     trn_resize = torchvision.transforms.Resize([H+40,W+40])
     trn_crop= torchvision.transforms.CenterCrop([H,W])
@@ -324,22 +248,17 @@ def latent2stroke2(param, H,W, model, device):
 #         print(param[:,:-3].shape)
 #         with torch.no_grad():
     param_latent = (param[:,:5] / torch.norm(param[:,:5],dim=1).unsqueeze(1))*2
-    # if 'coarse_to_fine' not in self.opt.strategy:
-    #     if not details:
-    # c = torch.zeros(param.shape[0])#.cuda()
-    #         orig_img = self.generative_model.sample(param_latent, c) ### this outputs bx1xHxW image
-    #     else:
-    #         c = torch.ones(param.shape[0]).cuda()   ## pen
-    #         orig_img = self.generative_model_details.sample(param_latent, c) ### this outputs bx1xHxW image
-    # else:
-    c = network.SignWithSigmoidGrad.apply(param[:,-5])  
-    # print(param_latent.shape, c.shape)
-    orig_img = model.sample(param_latent, c) ### this outputs bx1xHxW image
+    if decide_largesmall==1:
+        c = network.SignWithSigmoidGrad.apply(param[:,-5])  
+        # print(param_latent.shape, c.shape)
+        orig_img = model.sample(param_latent, c) ### this outputs bx1xHxW image
+    else:
+        if choice is not None:
+            c = torch.ones(param.shape[0]) * choice
+            orig_img = model.sample(param_latent, c)
+        else:
+            orig_img = model.sample(param_latent) ### this outputs bx1xHxW image
     orig_img = trn_crop(trn_resize(orig_img))
-    # if not details: 
-    #     EPS = EPS1
-    # else:
-    #     EPS = EPS2
     matte = (orig_img>EPS).float()
     cmyk = matte.repeat(1,4,1,1)
     alpha = orig_img
@@ -351,8 +270,6 @@ def latent2stroke2(param, H,W, model, device):
     # else:
     #     matte_color = cmyk*color
     return matte_color, binary
-
-
 
 
 
@@ -391,7 +308,7 @@ def crop(img, h, w):
     return img
 
 
-def main(input_path, model_path, c_dim, generative_path, output_dir, generative = True, need_animation=False, resize_h=None, resize_w=None, repeat_num = 10, stroke_num = 10, serial=False, decision_switch=True):
+def main(input_path, model_path, model_path2, c_dim, generative_path, detail_c_dim, detail_generative_path, output_dir, generative = True, need_animation=False, resize_h=None, resize_w=None, repeat_num = 10,repeat_num_detail=10, stroke_num = 10, stroke_num_detail = 10, serial=False, decision_switch=True, decide_largesmall=0,detail=False):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     input_name = os.path.basename(input_path)
@@ -405,12 +322,26 @@ def main(input_path, model_path, c_dim, generative_path, output_dir, generative 
         if not os.path.exists(frame_dir):
             os.makedirs(frame_dir)
     # device = torch.device("cuda:7" if torch.cuda.is_available() else "cpu")
+    json.dump(locals(), open(os.path.join(frame_dir, '../arguments.json'), 'w'))
+    # device = torch.device("cuda:7" if torch.cuda.is_available() else "cpu")
     device = "cpu"
-    net_g = network.Painter(8, stroke_num, 256, 8, 3, 3,largesmall=1).to(device)
-    net_g.load_state_dict(torch.load(model_path))
-    
+    try:
+        net_g = network.Painter(8, stroke_num, 512, 8, 3, 3,largesmall=decide_largesmall).to(device)
+        net_g.load_state_dict(torch.load(model_path))
+    except:
+        print('loaded original smaller model')
+        net_g = network.Painter_Original(8, stroke_num, 256, 8, 3, 3).to(device)
+        net_g.load_state_dict(torch.load(model_path))
     net_g.eval()
+    
     for param in net_g.parameters():
+        param.requires_grad = False
+
+    net_g2 = network.Painter(8, stroke_num_detail, 512, 8, 3, 3,largesmall=decide_largesmall).to(device)
+    net_g2.load_state_dict(torch.load(model_path2))
+    net_g2.eval()
+    
+    for param in net_g2.parameters():
         param.requires_grad = False
 
     if not generative:
@@ -419,147 +350,129 @@ def main(input_path, model_path, c_dim, generative_path, output_dir, generative 
         meta_brushes = torch.cat(
             [brush_large_vertical, brush_large_horizontal], dim=0)
     else:
-        # model = BetaVAE_B_256_Conditional(z_dim=5, c_dim=2, nc=1)       
-        # state = torch.load(os.path.join('../train/strokes_alpha_gamma100_z5_c2_size256_last.pt'),map_location='cpu')        
-        # model.load_state_dict(state['model_states']['net'])
-        model = BetaVAE_B_256_Conditional(z_dim=5, c_dim = c_dim, nc=1)       
-        state = torch.load(os.path.join(generative_path),map_location='cpu')        
-        model.load_state_dict(state['model_states']['net'])
+        if c_dim>0:
+            model = BetaVAE_B_256_Conditional(z_dim=5, c_dim = c_dim, nc=1)       
+            state = torch.load(os.path.join(generative_path),map_location='cpu')        
+            model.load_state_dict(state['model_states']['net'])
+        else:
+            model = BetaVAE_B_256(z_dim=5, nc=1)       
+            state = torch.load(os.path.join(generative_path),map_location='cpu')        
+            model.load_state_dict(state['model_states']['net'])
+            
         for param in model.parameters():
-            # print(param, param.requires_grad)
             param.requires_grad = False
             
         generative_model = model.to(device)
 
+        
+        if detail_c_dim>0:
+            detail_model = BetaVAE_B_256_Conditional(z_dim=5, c_dim = c_dim, nc=1)       
+            state = torch.load(os.path.join(detail_generative_path),map_location='cpu')        
+            detail_model.load_state_dict(state['model_states']['net'])
+        else:
+            detail_model = BetaVAE_B_256(z_dim=5, nc=1)       
+            state = torch.load(os.path.join(detail_generative_path),map_location='cpu')        
+            detail_model.load_state_dict(state['model_states']['net'])
+            
+        for param in detail_model.parameters():
+            param.requires_grad = False
+
+        detail_generative_model = detail_model.to(device)
+        
+        
 
     with torch.no_grad():
         original_img = read_img(input_path, 'CMYK', resize_h, resize_w).to(device)  # 이미지 읽어옴
-        # original_h, original_w = original_img.shape[-2:]  # 이미지 shape checking
-        # K = max(math.ceil(math.log2(max(original_h, original_w) / patch_size)), 0) 
-        # original_img_pad_size = patch_size * (2 ** K)  
-        # original_img_pad = pad(original_img, original_img_pad_size, original_img_pad_size)
         final_result = torch.zeros_like(original_img).to(device)
         save_img(original_img[0], frame_dir, "target.png")
+        
+        
+        ### Background Drawing
         for repeat in tqdm(range(repeat_num)):
-            # layer_size = patch_size * (2 ** layer)
-            # img = F.interpolate(original_img, (layer_size, layer_size))
-            # result = F.interpolate(final_result, (patch_size * (2 ** layer), patch_size * (2 ** layer)))
-            # img_patch = F.unfold(img, (patch_size, patch_size), stride=(patch_size, patch_size))
-            # result_patch = F.unfold(result, (patch_size, patch_size),
-            #                         stride=(patch_size, patch_size))
-            # # There are patch_num * patch_num patches in total
-            # patch_num = (layer_size - patch_size) // patch_size + 1
-
-            # img_patch, result_patch: b, 3 * output_size * output_size, h * w
-            # img_patch = img_patch.permute(0, 2, 1).contiguous().view(-1, 3, patch_size, patch_size).contiguous()
-            # result_patch = result_patch.permute(0, 2, 1).contiguous().view(
-            #     -1, 3, patch_size, patch_size).contiguous()
-            # save_img(final_result[0], frame_dir, "input_result_{}.png".format(repeat))
             
             param, decisions = net_g(original_img, final_result)
-            # print(param.shape, decisions.shape)
-            # print(self.net_g.linear_param[0].weight)
-            # print('latent', param[:,:5])
-            # print('color', param[:,5:8])
-    #         print(param.shape)
-            # stroke_param: b, stroke_per_patch, param_per_stroke
-            # decision: b, stroke_per_patch, 1
-            # pred_decision = decisions.view(-1, stroke_num).contiguous()
-            # pred_param = param[:, :, :8]
-            param = param.view(-1, 10).contiguous()
-            foregrounds, alphas = latent2stroke2(param, resize_h, resize_w, generative_model, device)
-            # print(foregrounds.shape)
-            # for j in range(foregrounds.shape[0]):
-            #     save_img(foregrounds[j], frame_dir, "debug_{:05d}.png".format(j))
-            # raise("debugging")
-            # foreground, alpha: b * stroke_per_patch, 3, output_size, output_size
+            if decide_largesmall==1:
+                param = param.view(-1, 10).contiguous()
+            else:
+                param = param.view(-1, 9).contiguous()
+            foregrounds, alphas = latent2stroke2(param, resize_h, resize_w, generative_model, device, decide_largesmall, choice=0)
             foregrounds = foregrounds.view(-1, stroke_num, 4, resize_h, resize_w)
             alphas = alphas.view(-1, stroke_num, 1, resize_h, resize_w)
-            # foreground, alpha: b, stroke_per_patch, 3, output_size, output_size
             decisions = network.SignWithSigmoidGrad.apply(decisions.view(-1, stroke_num, 1, 1, 1).contiguous())
-            # print('decisions',decisions)
-            # self.rec = self.old.clone()
-            # print(foregrounds.shape)
             for j in range(foregrounds.shape[1]):
                 foreground = foregrounds[:, j, :, :, :]
                 alpha = alphas[:, j, :, :, :]
                 decision = decisions[:, j, :, :, :]
-                # print((alpha==0).all())
-                # print(foreground.shape, decision.shape, alpha.shape)
-                # self.rec_content_wc = torch.clip(content_wc*decision+ self.rec_content_wc, torch.min(content_wc,self.rec_content_wc),torch.max(content_wc,self.rec_content_wc))
                 if decision_switch:
                     final_result = torch.clip(foreground*decision + final_result, torch.min(foreground, final_result), torch.max(foreground, final_result))
                 else:
                     final_result = torch.clip(foreground + final_result, torch.min(foreground, final_result), torch.max(foreground, final_result))
             if repeat%1 ==0:
                 save_img(final_result[0], frame_dir, "repeat_{:05d}.png".format(repeat))
+                
+        if detail:
+            ### Detail Drawing
+            for repeat in tqdm(range(repeat_num, repeat_num+repeat_num_detail)):
+
+                param, decisions = net_g2(original_img, final_result)
+                if decide_largesmall==1:
+                    param = param.view(-1, 10).contiguous()
+                else:
+                    param = param.view(-1, 9).contiguous()
+                foregrounds, alphas = latent2stroke2(param, resize_h, resize_w, detail_generative_model, device, decide_largesmall, choice=1)
+                foregrounds = foregrounds.view(-1, stroke_num_detail, 4, resize_h, resize_w)
+                alphas = alphas.view(-1, stroke_num_detail, 1, resize_h, resize_w)
+                decisions = network.SignWithSigmoidGrad.apply(decisions.view(-1, stroke_num_detail, 1, 1, 1).contiguous())
+                for j in range(foregrounds.shape[1]):
+                    foreground = foregrounds[:, j, :, :, :]
+                    alpha = alphas[:, j, :, :, :]
+                    decision = decisions[:, j, :, :, :]
+                    if decision_switch:
+                        final_result = torch.clip(foreground*decision + final_result, torch.min(foreground, final_result), torch.max(foreground, final_result))
+                    else:
+                        final_result = torch.clip(foreground + final_result, torch.min(foreground, final_result), torch.max(foreground, final_result))
+                if repeat%1 ==0:
+                    save_img(final_result[0], frame_dir, "repeat_{:05d}.png".format(repeat))
+                
+                
         command = 'convert {}/*.png {}/{}.gif'.format(frame_dir, frame_dir, input_name[:input_name.find('.')])
         print("converting to {}.gif".format(input_name[:input_name.find('.')]))
         os.system(command)
 
 
 
-        # border_size = original_img_pad_size // (2 * patch_num)
-        # img = F.interpolate(original_img_pad, (patch_size * (2 ** layer), patch_size * (2 ** layer)))
-        # result = F.interpolate(final_result, (patch_size * (2 ** layer), patch_size * (2 ** layer)))
-        # img = F.pad(img, [patch_size // 2, patch_size // 2, patch_size // 2, patch_size // 2,
-        #                   0, 0, 0, 0])
-        # result = F.pad(result, [patch_size // 2, patch_size // 2, patch_size // 2, patch_size // 2,
-        #                         0, 0, 0, 0])
-        # img_patch = F.unfold(img, (patch_size, patch_size), stride=(patch_size, patch_size))
-        # result_patch = F.unfold(result, (patch_size, patch_size), stride=(patch_size, patch_size))
-        # final_result = F.pad(final_result, [border_size, border_size, border_size, border_size, 0, 0, 0, 0])
-        # h = (img.shape[2] - patch_size) // patch_size + 1
-        # w = (img.shape[3] - patch_size) // patch_size + 1
-        # # img_patch, result_patch: b, 3 * output_size * output_size, h * w
-        # img_patch = img_patch.permute(0, 2, 1).contiguous().view(-1, 3, patch_size, patch_size).contiguous()
-        # result_patch = result_patch.permute(0, 2, 1).contiguous().view(-1, 3, patch_size, patch_size).contiguous()
-        # stroke_param, stroke_decision = net_g(img_patch, result_patch)
 
-        # # grid = shape_param[:, :, :2].view(img_patch.shape[0] * stroke_num, 1, 1, 2).contiguous()
-        # # img_temp = img_patch.unsqueeze(1).contiguous().repeat(1, stroke_num, 1, 1, 1).view(
-        # #     img_patch.shape[0] * stroke_num, 3, patch_size, patch_size).contiguous()
-        # # color = F.grid_sample(img_temp, 2 * grid - 1, align_corners=False).view(
-        # #     img_patch.shape[0], stroke_num, 3).contiguous()
-        # # stroke_param = torch.cat([shape_param, color], dim=-1)
-        # # stroke_param: b * h * w, stroke_per_patch, param_per_stroke
-        # # stroke_decision: b * h * w, stroke_per_patch, 1
-        # param = stroke_param.view(1, h, w, stroke_num, 8).contiguous()
-        # decision = stroke_decision.view(1, h, w, stroke_num).contiguous().bool()
-        # # param: b, h, w, stroke_per_patch, 8
-        # # decision: b, h, w, stroke_per_patch
-        # # param[..., :2] = param[..., :2] / 2 + 0.25
-        # # param[..., 2:4] = param[..., 2:4] / 2
-        # if serial:
-        #     final_result = param2img_serial(param, decision, generative_model, final_result,
-        #                                     frame_dir, True, original_h, original_w)
-        # else:
-        #     final_result = param2img_parallel(param, decision, generative_model, final_result)
-        # final_result = final_result[:, :, border_size:-border_size, border_size:-border_size]
-
-        # final_result = crop(final_result, original_h, original_w)
 
 
 if __name__ == '__main__':
-    pic_list = ['1','2','3','starry_night','gradient','ocean','jennifer']
-    # pic_list = ['jennifer']]
-    model_path = '../train/checkpoints/ORIGINAL_stroke32_gt100_pix50_dec10_largesmall/latest_net_g.pth'
-    output_dir = 'output/ORIGINAL_stroke32_gt100_pix50_dec10_largesmall/epoch110'
-    generative_path = '../train/markers_large_small_gamma100_z5_c3_size256_last.pt'
+    pic_list = ['1','2','3','starry_night','gradient','ocean','jennifer','face']
+    # pic_list = ['face']
+    model_path = '../train/checkpoints/REVISITING_fore32_back1to96_gt100_pix30_dec10_300epoch_genz5c2_lr1e-5/100_net_g.pth'
+    detail_model_path = '../train/checkpoints/DEEPER_DETAILS_ONLY_stroke200_gt100_pix50_dec10_600epoch_genz5c2_600epoch_lr1e-5/latest_net_g.pth'
+    output_dir = 'output/revisiting_background/REVISITING_fore32_back1to96_gt100_pix30_dec10_300epoch_genz5c2_lr1e-5'
+    generative_path = '../train/strokes_alpha_gamma100_z5_c2_size256_iter_750000.pt'
+    generative_path2 = '../train/markers_large_small_gamma100_z5_c2_size256_last.pt'
     for i in pic_list:
         main(input_path='../picture/{}.jpg'.format(i),
             model_path=model_path,
-            c_dim = 3, 
+            model_path2=detail_model_path,
+            c_dim = 2, 
             generative_path = generative_path,
+            detail_c_dim = 2, 
+            detail_generative_path = generative_path2,
             output_dir=output_dir,
             generative=True,
             need_animation=True,  # whether need intermediate results for animation.
             resize_h=256,         # resize original input to this size. None means do not resize.
             resize_w=256,         # resize original input to this size. None means do not resize.
-            repeat_num = 40,
+            repeat_num = 20,
+            repeat_num_detail = 20,
             stroke_num = 32, 
+            stroke_num_detail = 200,
             serial=True,
-            decision_switch = False)          # if need animation, serial must be True.
+            decision_switch = True,
+            decide_largesmall = 0,
+            detail=True)          # if need animation, serial must be True.
     command = 'zip -r {}.zip {}'.format(output_dir, output_dir)
     os.system(command)
 
