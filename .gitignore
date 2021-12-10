@@ -6,3 +6,5 @@ train/*.pt
 train/debug/*
 train/train.sh
 debug_*
+/inference/checking
+/inference/*.jpg
