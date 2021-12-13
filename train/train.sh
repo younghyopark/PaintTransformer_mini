@@ -1,31 +1,27 @@
 python train.py \
---name DEEPER_LONGHORIZON_SIMPLER_stroke32_C1F2_gt100_pix50_dec10_400epoch_genz5c2_lr1e-5 \
---gpu_ids 0 \
+--name NOCROP_fore32_3x3_TILEback1to64_gt10_pix100_dec10_300epoch_genz5c2_lr1e-5 \
+--gpu_ids 4 \
 --model painter \
 --dataset_mode null \
---batch_size 32 \
+--batch_size 18 \
 --display_freq 25 \
 --print_freq 25 \
 --lr 1e-5 \
 --init_type normal \
---n_epochs 400 \
+--n_epochs 300 \
 --n_epochs_decay 20 \
---max_dataset_size 14400 \
+--max_dataset_size 20000 \
 --save_epoch_freq 20 \
 --display_port 8080 \
 --used_strokes 32 \
---long_horizon \
---simpler_long_horizon \
---lambda_gt 100 \
+--multiply 2 \
+--latent2stroke_cvalues 00 \
+--lambda_gt 10 \
 --lambda_decision 10 \
---lambda_pixel 50 \
---inference_repeat_num 3 \
---coarse_num 1 \
---fine_num 2 \
---fake_batch_size 4 \
+--lambda_pixel 100 \
 --generative \
 --generative_cdim 2 \
 --generative_zdim 5 \
---generative_path markers_large_small_gamma100_z5_c2_size256_last \
---strategy strategy \
---decide_largesmall
+--no-crop \
+--tbt-background-tile \
+--generative_path markers_large_small_gamma100_z5_c2_size256_last

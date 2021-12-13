@@ -13,7 +13,7 @@ if __name__ == '__main__':
     model = create_model(opt)      # create a model given opt.model and other options
     model.setup(opt)               # regular setup: load and print networks; create schedulers
     visualizer = Visualizer(opt)   # create a visualizer that display/save images and plots
-    total_iters = 0                # the total number of training iterations
+    total_iters = 0                
     
     if opt.strategy is not None:
         if 'coarse_to_fine' in opt.strategy:

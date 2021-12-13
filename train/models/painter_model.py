@@ -283,8 +283,13 @@ class PainterModel(BaseModel):
                     param.requires_grad = False
             self.generative_model = model.to(self.device)        
         
-        net_g = networks.Painter(self.d_shape, opt.used_strokes, opt.ngf,
-                                 n_enc_layers=opt.num_blocks, n_dec_layers=opt.num_blocks, largesmall=int(self.opt.decide_largesmall))
+        if 'DEEPER' not in self.opt.name:
+            net_g = networks.Painter_Original(self.d_shape, opt.used_strokes, 256,
+                                     n_enc_layers=opt.num_blocks, n_dec_layers=opt.num_blocks)
+        else:
+            net_g = networks.Painter(self.d_shape, opt.used_strokes, 512,
+                                     n_enc_layers=opt.num_blocks, n_dec_layers=opt.num_blocks, largesmall=int(self.opt.decide_largesmall))
+            
         self.net_g = networks.init_net(net_g, opt.init_type, opt.init_gain, self.gpu_ids)
         
         if self.opt.continue_training:
@@ -309,10 +314,11 @@ class PainterModel(BaseModel):
             self.optimizers.append(self.optimizer)
 
     
-    def latent2stroke2(self, param, H,W):
+    def latent2stroke2(self, param, H,W, select_c = 0):
         ## define transformations
         trn_resize = torchvision.transforms.Resize([H+40,W+40])
         trn_crop= torchvision.transforms.CenterCrop([H,W])
+        trn_resize2 = torchvision.transforms.Resize([H,W])
         
         param_latent = (param[:,:self.opt.generative_zdim] / torch.norm(param[:,:self.opt.generative_zdim],dim=1).unsqueeze(1))*self.opt.sigma
         if self.opt.generative_cdim>0: 
@@ -320,11 +326,18 @@ class PainterModel(BaseModel):
                 c = networks.SignWithSigmoidGrad.apply(param[:,-5])  
                 orig_img = self.generative_model.sample(param_latent, c) 
             else:
-                c = torch.ones(param.shape[0]).cuda()
+                if select_c==1:
+                    c = torch.ones(param.shape[0]).cuda()
+                elif select_c==0:
+                    c = torch.zeros(param.shape[0]).cuda()
                 orig_img = self.generative_model.sample(param_latent, c) 
         else:
             orig_img = self.generative_model.sample(param_latent) 
-        orig_img = trn_crop(trn_resize(orig_img))
+            
+        if self.opt.no_crop:
+            orig_img = trn_resize2(orig_img)
+        else:
+            orig_img = trn_crop(trn_resize(orig_img))
         
         EPS = EPS1
         binary = (orig_img>EPS).float()
@@ -468,14 +481,19 @@ class PainterModel(BaseModel):
 
     def set_input(self, input_dict, background_stroke_times):
         self.image_paths = input_dict['A_paths']
-        stroke_num = self.opt.used_strokes * background_stroke_times
+        stroke_num = np.random.randint(1,self.opt.used_strokes * background_stroke_times)
         with torch.no_grad():
             if not self.opt.generative:
                 old_param = torch.rand(self.opt.batch_size, stroke_num, self.d, device=self.device)
                 old_param[:, :, :4] = old_param[:, :, :4] * 0.5 + 0.2
                 old_param[:, :, -4:-1] = old_param[:, :, -7:-4]
             else:
-                old_param = -1 + torch.rand(self.opt.batch_size, stroke_num, self.d, device=self.device) * 2
+                if self.opt.background_tile:
+                    old_param = -1 + torch.rand(self.opt.batch_size//4, stroke_num, self.d, device=self.device) * 2
+                elif self.opt.tbt_background_tile:
+                    old_param = -1 + torch.rand(self.opt.batch_size//9, stroke_num, self.d, device=self.device) * 2
+                else:
+                    old_param = -1 + torch.rand(self.opt.batch_size, stroke_num, self.d, device=self.device) * 2
 
             old_param = old_param.view(-1, self.d).contiguous()
             if not self.opt.generative:
@@ -483,17 +501,36 @@ class PainterModel(BaseModel):
                 foregrounds = morphology.Dilation2d(m=1)(foregrounds)
                 alphas = morphology.Erosion2d(m=1)(alphas)
             else:
-                foregrounds, alphas = self.latent2stroke2(old_param, self.patch_size, self.patch_size)
+                if self.opt.background_tile:
+                    foregrounds, alphas = self.latent2stroke2(old_param, self.patch_size*2, self.patch_size*2, int(self.opt.latent2stroke_cvalues[0]))
+                else:
+                    foregrounds, alphas = self.latent2stroke2(old_param, self.patch_size, self.patch_size, int(self.opt.latent2stroke_cvalues[0]))
 
-            foregrounds = foregrounds.view(self.opt.batch_size, stroke_num, 4, self.patch_size,
-                                           self.patch_size).contiguous()
-            alphas = alphas.view(self.opt.batch_size, stroke_num, 1, self.patch_size,
-                                 self.patch_size).contiguous()
-            result_content_wc = torch.zeros(self.opt.batch_size, 4, self.patch_size, self.patch_size, device=self.device)
-            result_alpha = torch.zeros(self.opt.batch_size, 1, self.patch_size, self.patch_size, device=self.device)
-            old_decision = torch.ones(self.opt.batch_size, stroke_num, device=self.device)
-            # old_decision = torch.empty(self.opt.batch_size, stroke_num, device=self.device).uniform_(0, 1)
-            # old_decision = torch.bernoulli(old_decision)
+                # original_img = original_img.reshape(-1,4,2**repeat,img_size,2**repeat,img_size)  # 1 4 2 128 2 128
+                # original_img = original_img.permute(0,2,4,1,3,5)  # 1 2 2 4 128 128 
+                # original_img = original_img.reshape(-1, 4, img_size, img_size) # 4 4 128 128 
+            
+            if self.opt.background_tile:
+                foregrounds = foregrounds.view(self.opt.batch_size // 4, stroke_num, 4, self.patch_size * 2,
+                                               self.patch_size * 2).contiguous()
+                alphas = alphas.view(self.opt.batch_size // 4, stroke_num, 1, self.patch_size * 2,
+                                     self.patch_size * 2).contiguous()
+                result_content_wc = torch.zeros(self.opt.batch_size // 4, 4, self.patch_size * 2, self.patch_size * 2, device=self.device)
+                old_decision = torch.ones(self.opt.batch_size//4, stroke_num, device=self.device)
+            elif self.opt.tbt_background_tile:
+                foregrounds = foregrounds.view(self.opt.batch_size // 9, stroke_num, 4, self.patch_size,
+                                               self.patch_size).contiguous()
+                alphas = alphas.view(self.opt.batch_size //9, stroke_num, 1, self.patch_size,
+                                     self.patch_size).contiguous()
+                result_content_wc = torch.zeros(self.opt.batch_size // 9, 4, self.patch_size, self.patch_size, device=self.device)
+                old_decision = torch.ones(self.opt.batch_size//9, stroke_num, device=self.device)
+            else:
+                foregrounds = foregrounds.view(self.opt.batch_size, stroke_num, 4, self.patch_size,
+                                               self.patch_size).contiguous()
+                alphas = alphas.view(self.opt.batch_size, stroke_num, 1, self.patch_size,
+                                     self.patch_size).contiguous()
+                result_content_wc = torch.zeros(self.opt.batch_size, 4, self.patch_size, self.patch_size, device=self.device)
+                old_decision = torch.ones(self.opt.batch_size, stroke_num, device=self.device)
             
             for i in range(stroke_num):
                 content_wc = foregrounds[:, i, :, :, :]
@@ -502,12 +539,39 @@ class PainterModel(BaseModel):
                     iou = (torch.sum(alpha * alphas[:, j, :, :, :], dim=(-3, -2, -1)) + 1e-5) / (
                             torch.sum(alphas[:, j, :, :, :], dim=(-3, -2, -1)) + 1e-5)
                     old_decision[:, i] = ((iou < 0.8) | (~old_decision[:, j].bool())).float() * old_decision[:, i]
-                decision = old_decision[:, i].view(self.opt.batch_size, 1, 1, 1).contiguous()
+                if self.opt.background_tile:
+                    decision = old_decision[:, i].view(self.opt.batch_size//4, 1, 1, 1).contiguous()
+                elif self.opt.tbt_background_tile:
+                    decision = old_decision[:, i].view(self.opt.batch_size//9, 1, 1, 1).contiguous()
+                else:
+                    decision = old_decision[:, i].view(self.opt.batch_size, 1, 1, 1).contiguous()
                 result_content_wc = torch.clip(content_wc*decision+ result_content_wc, torch.min(content_wc,result_content_wc),torch.max(content_wc,result_content_wc))
                 old = result_content_wc
-            self.old = old.view(self.opt.batch_size, 4, self.patch_size, self.patch_size).contiguous()
-            self.old_content_wc = result_content_wc.clone()
-            self.old_alpha = result_alpha.clone()
+                
+            if self.opt.background_tile:
+                self.old = old.view(self.opt.batch_size // 4, 4, 2, self.patch_size, 2, self.patch_size).contiguous()
+                self.old = self.old.permute(0, 2, 4, 1, 3, 5).contiguous()
+                self.old = self.old.view(self.opt.batch_size, 4, self.patch_size, self.patch_size).contiguous()
+                result_content_wc = self.old
+                self.old_content_wc = result_content_wc.clone()
+
+            if self.opt.tbt_background_tile:
+                _temp_trn1 = torchvision.transforms.CenterCrop([256-22, 256-22])
+                old= _temp_trn1(old)
+                # print(old.shape)
+                _grid_size = 234//3
+                old = old.view(self.opt.batch_size//9, 4, 3, _grid_size, 3, _grid_size).contiguous()
+                old = old.permute(0, 2, 4, 1, 3, 5).contiguous()
+                old = old.view(self.opt.batch_size, 4, _grid_size, _grid_size).contiguous()
+                _temp_trn2 = torchvision.transforms.Resize([256,256])
+                self.old = _temp_trn2(old)
+                result_content_wc = self.old
+                self.old_content_wc = result_content_wc.clone()
+                
+                
+            else:
+                self.old = old.view(self.opt.batch_size, 4, self.patch_size, self.patch_size).contiguous()
+                self.old_content_wc = result_content_wc.clone()
 
             if not self.opt.generative:
                 gt_param = torch.rand(self.opt.batch_size, self.opt.used_strokes, self.d, device=self.device)
@@ -523,14 +587,13 @@ class PainterModel(BaseModel):
                 foregrounds = morphology.Dilation2d(m=1)(foregrounds)
                 alphas = morphology.Erosion2d(m=1)(alphas)
             else:
-                foregrounds, alphas = self.latent2stroke2(gt_param, self.patch_size, self.patch_size)
+                foregrounds, alphas = self.latent2stroke2(gt_param, self.patch_size, self.patch_size, int(self.opt.latent2stroke_cvalues[1]))
             foregrounds = foregrounds.view(self.opt.batch_size, self.opt.used_strokes, 4, self.patch_size,
                                            self.patch_size).contiguous()
             alphas = alphas.view(self.opt.batch_size, self.opt.used_strokes, 1, self.patch_size,
                                  self.patch_size).contiguous()
             self.render = self.old.clone()
             self.content_wc = self.old_content_wc.clone()
-            self.alpha = self.old_alpha.clone()
             gt_decision = torch.ones(self.opt.batch_size, self.opt.used_strokes, device=self.device)
 
             for i in range(self.opt.used_strokes):
@@ -545,6 +608,16 @@ class PainterModel(BaseModel):
                 self.render = self.content_wc
                 
             self.gt_decision = gt_decision
+            
+            
+            ## shuffle the batch
+            idx = torch.randperm(self.gt_param.shape[0])
+            self.gt_param = self.gt_param[idx].view(self.gt_param.size())
+            self.gt_decision = self.gt_decision[idx].view(self.gt_decision.size())
+            self.old = self.old[idx].view(self.old.size())
+            self.render = self.render[idx].view(self.render.size())
+            self.content_wc = self.content_wc[idx].view(self.content_wc.size())
+            
 
     def forward(self):
         # print(self.render.shape, self.old.shape)
@@ -559,7 +632,7 @@ class PainterModel(BaseModel):
             foregrounds = morphology.Dilation2d(m=1)(foregrounds)
             alphas = morphology.Erosion2d(m=1)(alphas)
         else:
-            foregrounds, alphas = self.latent2stroke2(param, self.patch_size, self.patch_size)
+            foregrounds, alphas = self.latent2stroke2(param, self.patch_size, self.patch_size, int(self.opt.latent2stroke_cvalues[1]))
 
         foregrounds = foregrounds.view(-1, self.opt.used_strokes, 4, self.patch_size, self.patch_size)
         alphas = alphas.view(-1, self.opt.used_strokes, 1, self.patch_size, self.patch_size)

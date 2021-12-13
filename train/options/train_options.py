@@ -37,7 +37,10 @@ class TrainOptions(BaseOptions):
         parser.add_argument('--generative_zdim',default=5, type=int)        
 
         parser.add_argument('--decide_largesmall',action='store_true')        
-        
+        parser.add_argument('--no-crop',action='store_true')        
+        parser.add_argument('--background-tile',action='store_true')        
+        parser.add_argument('--tbt-background-tile',action='store_true')        
+
         parser.add_argument('--debug', action='store_true')
         parser.add_argument('--strategy', type=str, default=None)   ## 'linear_CMYKmax'
         
@@ -52,6 +55,7 @@ class TrainOptions(BaseOptions):
         parser.add_argument('--fine_CMYKmin', type=float, default=0.7)   ## 'linear_CMYKmax'
         parser.add_argument('--fine_CMYKmax', type=float, default=1.0)   ## 'linear_CMYKmax'
         parser.add_argument('--CMYK_maxclip', type=float, default=0)   ## 'linear_CMYKmax'
+        parser.add_argument('--latent2stroke_cvalues', type=str, default='00')   ## 'linear_CMYKmax'
 
 
         # network saving and loading parameters
