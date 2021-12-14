@@ -20,8 +20,7 @@ python train.py \
 --lambda_decision 10 \
 --lambda_pixel 100 \
 --generative \
---generative_cdim 2 \
 --generative_zdim 5 \
 --no-crop \
 --tbt-background-tile \
---generative_path markers_large_small_gamma100_z5_c2_size256_last
+--generative_path img_only_large_z5_gamma100_last

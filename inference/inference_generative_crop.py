@@ -258,6 +258,7 @@ def latent2stroke2(param, H,W, model, device, decide_largesmall, no_crop= True, 
     else:
         if choice is not None:
             c = torch.ones(param.shape[0]) * choice
+            c = c.to(device)
             orig_img = model.sample(param_latent, c)
         else:
             orig_img = model.sample(param_latent) ### this outputs bx1xHxW image
@@ -340,7 +341,7 @@ def main(input_path, model_path, model_path2, c_dim, generative_path, detail_c_d
     # device = torch.device("cuda:7" if torch.cuda.is_available() else "cpu")
     json.dump(locals(), open(os.path.join(frame_dir, '../arguments.json'), 'w'))
     # device = torch.device("cuda:7" if torch.cuda.is_available() else "cpu")
-    device = "cpu"
+    device = "cuda:1"
     try:
         net_g = network.Painter(8, stroke_num, 512, 8, 3, 3,largesmall=decide_largesmall).to(device)
         net_g.load_state_dict(torch.load(model_path))
@@ -495,7 +496,7 @@ def main(input_path, model_path, model_path2, c_dim, generative_path, detail_c_d
                 original_img = temp_trn(original_img)
             
             previous_step = final_result
-            save_img(final_result[0], frame_dir, "{:02d}_final_{}x{}.png".format(idx,grid_num,grid_num))
+            save_img(final_result[0], frame_dir, "{}_{:02d}_{}x{}.png".format(input_name[:-4],idx,grid_num,grid_num))
             print('    saved its result to {:02d}_final.png'.format(idx))
                      
         command = 'convert {}/*.png {}/{}.gif'.format(frame_dir, frame_dir, input_name[:input_name.find('.')])
@@ -508,11 +509,11 @@ def main(input_path, model_path, model_path2, c_dim, generative_path, detail_c_d
 
 
 if __name__ == '__main__':
-    pic_list = ['sangok','1','2','3','starry_night','gradient','ocean','jennifer','face']
-    # pic_list = ['sangok']
-    model_path = "../train/checkpoints/NOCROP_fore32_back1to64_gt100_pix30_dec10_300epoch_genz5c2_lr1e-5/latest_net_g.pth"
+    pic_list = ['sangok','labs','naver','1','2','3','starry_night','gradient','ocean','jennifer','face']
+    # pic_list = ['']
+    model_path = "../train/checkpoints/NOCROP_fore32_3x3_TILEback1to64_gt100_pix30_dec10_300epoch_genz5c2_lr1e-5/latest_net_g.pth"
     detail_model_path = '../train/checkpoints/DEEPER_DETAILS_ONLY_stroke200_gt100_pix50_dec10_600epoch_genz5c2_600epoch_lr1e-5/latest_net_g.pth'
-    output_dir = './output/nocrop_notile_gridnum_123456'
+    output_dir = './output/nocrop_3x3tile_gridnum_2345_gt100_pix30_2'
     generative_path = '../train/markers_large_small_gamma100_z5_c2_size256_last.pt'
     generative_path2 = '../train/markers_large_small_gamma100_z5_c2_size256_last.pt'
     for i in pic_list:
@@ -537,7 +538,7 @@ if __name__ == '__main__':
             decide_largesmall = 0,
             no_crop = True,
             boundary=22, 
-            grid_nums=[1,2,3,4,5,6], 
+            grid_nums=[2,3,4,5], 
             detail=False)          # if need animation, serial must be True.
     command = 'zip -r {}.zip {}'.format(output_dir, output_dir)
     os.system(command)
