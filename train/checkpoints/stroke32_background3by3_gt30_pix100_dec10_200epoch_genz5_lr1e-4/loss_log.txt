@@ -1,0 +1,30 @@
+================ Training Loss (Mon Dec 13 16:52:09 2021) ================
+(epoch: 1, iters: 450, time: 0.049, data: 0.224) pixel: 8.626 gt: 14.459 decision: 4.724 
+(epoch: 1, iters: 900, time: 0.035, data: 0.000) pixel: 9.069 gt: 12.969 decision: 4.452 
+(epoch: 1, iters: 1350, time: 0.030, data: 0.000) pixel: 17.265 gt: 12.306 decision: 3.191 
+================ Training Loss (Mon Dec 13 16:55:46 2021) ================
+(epoch: 1, iters: 450, time: 0.045, data: 0.209) pixel: 9.185 gt: 14.290 decision: 4.613 
+(epoch: 1, iters: 900, time: 0.041, data: 0.000) pixel: 15.334 gt: 12.737 decision: 4.153 
+(epoch: 1, iters: 1350, time: 0.037, data: 0.000) pixel: 7.620 gt: 12.323 decision: 2.888 
+(epoch: 1, iters: 1800, time: 0.041, data: 0.000) pixel: 13.877 gt: 11.742 decision: 2.645 
+(epoch: 1, iters: 2250, time: 0.030, data: 0.000) pixel: 15.002 gt: 11.692 decision: 2.636 
+(epoch: 1, iters: 2700, time: 0.039, data: 0.000) pixel: 7.512 gt: 12.153 decision: 2.909 
+(epoch: 1, iters: 3150, time: 0.039, data: 0.000) pixel: 7.504 gt: 11.920 decision: 2.338 
+(epoch: 1, iters: 3600, time: 0.037, data: 0.000) pixel: 7.897 gt: 11.926 decision: 2.581 
+(epoch: 1, iters: 4050, time: 0.030, data: 0.000) pixel: 19.456 gt: 11.865 decision: 2.962 
+(epoch: 1, iters: 4500, time: 0.034, data: 0.000) pixel: 9.353 gt: 11.894 decision: 2.570 
+(epoch: 1, iters: 4950, time: 0.033, data: 0.000) pixel: 10.950 gt: 11.836 decision: 2.601 
+(epoch: 1, iters: 5400, time: 0.035, data: 0.000) pixel: 9.548 gt: 11.792 decision: 2.151 
+(epoch: 1, iters: 5850, time: 0.033, data: 0.000) pixel: 10.526 gt: 11.832 decision: 2.362 
+(epoch: 1, iters: 6300, time: 0.031, data: 0.000) pixel: 13.491 gt: 12.068 decision: 2.236 
+(epoch: 1, iters: 6750, time: 0.030, data: 0.000) pixel: 17.309 gt: 11.634 decision: 1.899 
+(epoch: 1, iters: 7200, time: 0.030, data: 0.000) pixel: 15.119 gt: 11.725 decision: 2.339 
+(epoch: 1, iters: 7650, time: 0.037, data: 0.000) pixel: 9.471 gt: 11.897 decision: 2.212 
+(epoch: 1, iters: 8100, time: 0.032, data: 0.000) pixel: 10.482 gt: 11.851 decision: 2.501 
+(epoch: 1, iters: 8550, time: 0.030, data: 0.000) pixel: 15.385 gt: 11.720 decision: 1.864 
+(epoch: 1, iters: 9000, time: 0.032, data: 0.000) pixel: 15.026 gt: 11.845 decision: 2.037 
+(epoch: 1, iters: 9450, time: 0.034, data: 0.000) pixel: 9.193 gt: 11.823 decision: 1.951 
+================ Training Loss (Mon Dec 13 17:01:51 2021) ================
+(epoch: 1, iters: 450, time: 0.046, data: 0.219) pixel: 12.315 gt: 14.181 decision: 4.303 
+(epoch: 1, iters: 900, time: 0.043, data: 0.000) pixel: 11.433 gt: 13.088 decision: 3.812 
+(epoch: 1, iters: 1350, time: 0.043, data: 0.000) pixel: 11.527 gt: 12.132 decision: 3.541 
