@@ -1,0 +1,10 @@
+================ Training Loss (Tue Dec  7 00:58:14 2021) ================
+(epoch: 1, iters: 800, time: 0.135, data: 0.269) pixel: 1.869 gt: 46.214 decision: 2.474 
+(epoch: 1, iters: 1600, time: 0.130, data: 0.000) pixel: 1.816 gt: 39.767 decision: 2.147 
+(epoch: 1, iters: 2400, time: 0.054, data: 0.000) pixel: 5.854 gt: 39.538 decision: 2.109 
+(epoch: 1, iters: 3200, time: 0.044, data: 0.000) pixel: 2.577 gt: 38.965 decision: 1.468 
+(epoch: 1, iters: 4000, time: 0.047, data: 0.000) pixel: 2.639 gt: 39.147 decision: 2.006 
+(epoch: 1, iters: 4800, time: 0.041, data: 0.000) pixel: 7.483 gt: 38.958 decision: 1.720 
+(epoch: 1, iters: 5600, time: 0.042, data: 0.000) pixel: 3.259 gt: 38.583 decision: 1.937 
+(epoch: 1, iters: 6400, time: 0.111, data: 0.000) pixel: 2.339 gt: 38.548 decision: 1.819 
+(epoch: 1, iters: 7200, time: 0.037, data: 0.000) pixel: 8.131 gt: 37.898 decision: 2.159 

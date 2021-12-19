@@ -240,7 +240,7 @@ def save_img(img, output_path, name):
     result.save(os.path.join(output_path, name))
 
 
-def latent2stroke2(param, H,W, model, device, decide_largesmall, no_crop= True, choice=None):
+def latent2stroke2(param, H,W, model, device, decide_largesmall, no_crop= True, choice=None, c_dim =0):
     # param: b, 10 (latent) + 3 (RGB)
     trn_resize = torchvision.transforms.Resize([H+40,W+40])
     trn_crop= torchvision.transforms.CenterCrop([H,W])
@@ -256,7 +256,7 @@ def latent2stroke2(param, H,W, model, device, decide_largesmall, no_crop= True, 
         # print(param_latent.shape, c.shape)
         orig_img = model.sample(param_latent, c) ### this outputs bx1xHxW image
     else:
-        if choice is not None:
+        if choice is not None and c_dim>0:
             c = torch.ones(param.shape[0]) * choice
             c = c.to(device)
             orig_img = model.sample(param_latent, c)
@@ -341,7 +341,7 @@ def main(input_path, model_path, model_path2, c_dim, generative_path, detail_c_d
     # device = torch.device("cuda:7" if torch.cuda.is_available() else "cpu")
     json.dump(locals(), open(os.path.join(frame_dir, '../arguments.json'), 'w'))
     # device = torch.device("cuda:7" if torch.cuda.is_available() else "cpu")
-    device = "cuda:1"
+    device = "cuda:5"
     try:
         net_g = network.Painter(8, stroke_num, 512, 8, 3, 3,largesmall=decide_largesmall).to(device)
         net_g.load_state_dict(torch.load(model_path))
@@ -441,7 +441,7 @@ def main(input_path, model_path, model_path2, c_dim, generative_path, detail_c_d
                 else:
                     param = param.view(-1, 9).contiguous()
                 
-                foregrounds, alphas = latent2stroke2(param, resize_h, resize_w, generative_model, device, decide_largesmall, no_crop, choice=0)
+                foregrounds, alphas = latent2stroke2(param, resize_h, resize_w, generative_model, device, decide_largesmall, no_crop, choice=0, c_dim = c_dim)
                 foregrounds = foregrounds.view(-1, stroke_num, 4, resize_h, resize_w)
                 alphas = alphas.view(-1, stroke_num, 1, resize_h, resize_w)
                 decisions = network.SignWithSigmoidGrad.apply(decisions.view(-1, stroke_num, 1, 1, 1).contiguous())
@@ -511,18 +511,18 @@ def main(input_path, model_path, model_path2, c_dim, generative_path, detail_c_d
 if __name__ == '__main__':
     pic_list = ['sangok','labs','naver','1','2','3','starry_night','gradient','ocean','jennifer','face']
     # pic_list = ['']
-    model_path = "../train/checkpoints/NOCROP_fore32_3x3_TILEback1to64_gt100_pix30_dec10_300epoch_genz5c2_lr1e-5/latest_net_g.pth"
+    model_path = "../train/checkpoints/painter_model_gen1_pix100gt10dec10_lr1e5_300epoch/180_net_g.pth"
     detail_model_path = '../train/checkpoints/DEEPER_DETAILS_ONLY_stroke200_gt100_pix50_dec10_600epoch_genz5c2_600epoch_lr1e-5/latest_net_g.pth'
-    output_dir = './output/nocrop_3x3tile_gridnum_2345_gt100_pix30_2'
-    generative_path = '../train/markers_large_small_gamma100_z5_c2_size256_last.pt'
+    output_dir = './output/pix100gt10dec10_what_model_really_wanted_to_draw_grid2345_epoch_180'
+    generative_path = '../train/gen1.pt'
     generative_path2 = '../train/markers_large_small_gamma100_z5_c2_size256_last.pt'
     for i in pic_list:
         main(input_path='../picture/{}.jpg'.format(i),
             model_path=model_path,
             model_path2=detail_model_path,
-            c_dim = 2, 
+            c_dim = 0, 
             generative_path = generative_path,
-            detail_c_dim = 2, 
+            detail_c_dim = 0, 
             detail_generative_path = generative_path2,
             output_dir=output_dir,
             generative=True,

@@ -1,6 +1,6 @@
 python train.py \
---name NOCROP_fore32_3x3_TILEback1to64_gt10_pix100_dec10_300epoch_genz5c2_lr1e-5 \
---gpu_ids 4 \
+--name painter_model_n16_sigma2_gen1_pix50gt100dec10_lr1e5_300epoch \
+--gpu_ids 3 \
 --model painter \
 --dataset_mode null \
 --batch_size 18 \
@@ -10,17 +10,19 @@ python train.py \
 --init_type normal \
 --n_epochs 300 \
 --n_epochs_decay 20 \
---max_dataset_size 20000 \
+--max_dataset_size 10000 \
 --save_epoch_freq 20 \
 --display_port 8080 \
 --used_strokes 32 \
 --multiply 2 \
+--sigma 2 \
 --latent2stroke_cvalues 00 \
---lambda_gt 10 \
+--lambda_gt 100 \
 --lambda_decision 10 \
---lambda_pixel 100 \
+--lambda_pixel 50 \
 --generative \
 --generative_zdim 5 \
 --no-crop \
 --tbt-background-tile \
---generative_path img_only_large_z5_gamma100_last
+--generative_path gen1
+

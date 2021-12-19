@@ -240,10 +240,11 @@ def save_img(img, output_path, name):
     result.save(os.path.join(output_path, name))
 
 
-def latent2stroke2(param, H,W, model, device, decide_largesmall, choice=None):
+def latent2stroke2(param, H,W, model, device, decide_largesmall, no_crop= True, choice=None, c_dim =0):
     # param: b, 10 (latent) + 3 (RGB)
     trn_resize = torchvision.transforms.Resize([H+40,W+40])
     trn_crop= torchvision.transforms.CenterCrop([H,W])
+    trn_resize2 = torchvision.transforms.Resize([H,W])
     trn_ToPIL = torchvision.transforms.ToPILImage(mode='CMYK')
     trn_ToTensor = torchvision.transforms.ToTensor()
     b = param.shape[0]
@@ -255,12 +256,16 @@ def latent2stroke2(param, H,W, model, device, decide_largesmall, choice=None):
         # print(param_latent.shape, c.shape)
         orig_img = model.sample(param_latent, c) ### this outputs bx1xHxW image
     else:
-        if choice is not None:
+        if choice is not None and c_dim>0:
             c = torch.ones(param.shape[0]) * choice
+            c = c.to(device)
             orig_img = model.sample(param_latent, c)
         else:
             orig_img = model.sample(param_latent) ### this outputs bx1xHxW image
-    orig_img = trn_crop(trn_resize(orig_img))
+    if no_crop:
+        orig_img = trn_resize2(orig_img)
+    else:
+        orig_img = trn_crop(trn_resize(orig_img))
     matte = (orig_img>EPS).float()
     cmyk = matte.repeat(1,4,1,1)
     alpha = orig_img
@@ -275,16 +280,26 @@ def latent2stroke2(param, H,W, model, device, decide_largesmall, choice=None):
 
 
 
-def read_img(img_path, img_type='RGB', h=None, w=None):
+def read_img(img_path, img_type='RGB', h=None, w=None, boundary=20):
     img = Image.open(img_path).convert(img_type)
     if h is not None and w is not None:
-        img = img.resize((w, h), resample=Image.NEAREST)
+        img = img.resize((w-boundary, h-boundary), resample=Image.NEAREST)
+    img = add_margin(img, boundary//2, boundary//2, boundary//2, boundary//2, (0,0,0,0))
     img = np.array(img)
     if img.ndim == 2:
         img = np.expand_dims(img, axis=-1)
     img = img.transpose((2, 0, 1))
     img = torch.from_numpy(img).unsqueeze(0).float() / 255.
     return img
+
+
+def add_margin(pil_img, top, right, bottom, left, color):
+    width, height = pil_img.size
+    new_width = width + right + left
+    new_height = height + top + bottom
+    result = Image.new(pil_img.mode, (new_width, new_height), color)
+    result.paste(pil_img, (left, top))
+    return result
 
 
 def pad(img, H, W):
@@ -310,7 +325,7 @@ def crop(img, h, w):
     return img
 
 
-def main(input_path, model_path, model_path2, c_dim, generative_path, detail_c_dim, detail_generative_path, output_dir, generative = True, need_animation=False, resize_h=None, resize_w=None, repeat_num = 10,repeat_num_detail=10, stroke_num = 10, stroke_num_detail = 10, serial=False, decision_switch=True, decide_largesmall=0,detail=False):
+def main(input_path, model_path, model_path2, c_dim, generative_path, detail_c_dim, detail_generative_path, output_dir, generative = True, need_animation=False, resize_h=None, resize_w=None, repeat_num = 10,repeat_num_detail=10, stroke_num = 10, stroke_num_detail = 10, serial=False, decision_switch=True, decide_largesmall=0,no_crop=True,boundary=20,grid_nums=[1,1,2,3,4,6], detail=False):
     if not os.path.exists(output_dir):
         os.makedirs(output_dir)
     input_name = os.path.basename(input_path)
@@ -326,7 +341,7 @@ def main(input_path, model_path, model_path2, c_dim, generative_path, detail_c_d
     # device = torch.device("cuda:7" if torch.cuda.is_available() else "cpu")
     json.dump(locals(), open(os.path.join(frame_dir, '../arguments.json'), 'w'))
     # device = torch.device("cuda:7" if torch.cuda.is_available() else "cpu")
-    device = "cpu"
+    device = "cuda:5"
     try:
         net_g = network.Painter(8, stroke_num, 512, 8, 3, 3,largesmall=decide_largesmall).to(device)
         net_g.load_state_dict(torch.load(model_path))
@@ -362,26 +377,56 @@ def main(input_path, model_path, model_path2, c_dim, generative_path, detail_c_d
         
 
     with torch.no_grad():
-        original_img = read_img(input_path, 'CMYK', resize_h, resize_w).to(device)  # 이미지 읽어옴
+        original_img = read_img(input_path, 'CMYK', resize_h, resize_w, boundary).to(device)  # 이미지 읽어옴
         final_result = torch.zeros_like(original_img).to(device)
         save_img(original_img[0], frame_dir, "target.png")
         
         img_size = 256
         idx=-1
-        ### Background Drawing   (256 -> 128 -> 64 -> 32 -> 16)
-        for repeat in tqdm(range(repeat_num)):
+        for grid_num in grid_nums:
             # for j in range(2):
                 # print(original_img.shape)
             idx= idx+1
-            if repeat>0:
-                img_size = img_size//2
-                original_img = original_img.reshape(-1,4,2**repeat,img_size,2**repeat,img_size)  # 1 4 2 128 2 128
+                                    
+            if img_size%grid_num==0:
+                print('divided the grid with {}x{}, with the padding. '.format(grid_num, grid_num))
+                grid_size = img_size//grid_num
+                # print(original_img.shape)
+                original_img = original_img.reshape(-1,4,grid_num,grid_size,grid_num,grid_size)  # 1 4 2 128 2 128
                 original_img = original_img.permute(0,2,4,1,3,5)  # 1 2 2 4 128 128 
-                original_img = original_img.reshape(-1, 4, img_size, img_size) # 4 4 128 128 
+                original_img = original_img.reshape(-1, 4, grid_size, grid_size) # 4 4 128 128 
 
-                final_result = final_result.reshape(-1,4,2**repeat,img_size, 2**repeat,img_size)
+                final_result = final_result.reshape(-1,4,grid_num,grid_size, grid_num,grid_size)
                 final_result = final_result.permute(0,2,4,1,3,5)
-                final_result = final_result.reshape(-1, 4, img_size, img_size)
+                final_result = final_result.reshape(-1, 4, grid_size, grid_size)
+                
+            elif (img_size - boundary)%grid_num==0:
+                print('divided the grid with {}x{}, taking off the padding.'.format(grid_num, grid_num))
+                grid_size = (img_size - boundary)//grid_num
+                temp_trn = torchvision.transforms.CenterCrop([img_size-boundary, img_size-boundary])
+                original_img = temp_trn(original_img)
+                final_result = temp_trn(final_result)
+                original_img = original_img.reshape(-1,4,grid_num,grid_size,grid_num,grid_size)  # 1 4 2 128 2 128
+                original_img = original_img.permute(0,2,4,1,3,5)  # 1 2 2 4 128 128 
+                original_img = original_img.reshape(-1, 4, grid_size, grid_size) # 4 4 128 128 
+                final_result = final_result.reshape(-1,4,grid_num,grid_size,grid_num,grid_size)
+                final_result = final_result.permute(0,2,4,1,3,5)
+                final_result = final_result.reshape(-1, 4, grid_size, grid_size)  
+            elif (img_size - 6)%grid_num==0:
+                print('divided the grid with {}x{}, taking off the padding.'.format(grid_num, grid_num))
+                grid_size = (img_size - 6)//grid_num
+                temp_trn = torchvision.transforms.CenterCrop([img_size-6, img_size-6])
+                original_img = temp_trn(original_img)
+                final_result = temp_trn(final_result)
+                original_img = original_img.reshape(-1,4,grid_num,grid_size,grid_num,grid_size)  # 1 4 2 128 2 128
+                original_img = original_img.permute(0,2,4,1,3,5)  # 1 2 2 4 128 128 
+                original_img = original_img.reshape(-1, 4, grid_size, grid_size) # 4 4 128 128 
+                final_result = final_result.reshape(-1,4,grid_num,grid_size,grid_num,grid_size)
+                final_result = final_result.permute(0,2,4,1,3,5)
+                final_result = final_result.reshape(-1, 4, grid_size, grid_size)  
+            else:
+                raise('not valid grid num')
+
 
             original_img = transforms.Resize([256,256])(original_img)
             final_result = transforms.Resize([256,256])(final_result)
@@ -396,7 +441,7 @@ def main(input_path, model_path, model_path2, c_dim, generative_path, detail_c_d
                 else:
                     param = param.view(-1, 9).contiguous()
                 
-                foregrounds, alphas = latent2stroke2(param, resize_h, resize_w, generative_model, device, decide_largesmall, choice=0)
+                foregrounds, alphas = latent2stroke2(param, resize_h, resize_w, generative_model, device, decide_largesmall, no_crop, choice=0, c_dim = c_dim)
                 foregrounds = foregrounds.view(-1, stroke_num, 4, resize_h, resize_w)
                 alphas = alphas.view(-1, stroke_num, 1, resize_h, resize_w)
                 decisions = network.SignWithSigmoidGrad.apply(decisions.view(-1, stroke_num, 1, 1, 1).contiguous())
@@ -408,28 +453,51 @@ def main(input_path, model_path, model_path2, c_dim, generative_path, detail_c_d
                         final_result = torch.clip(foreground*decision + final_result, torch.min(foreground, final_result), torch.max(foreground, final_result))
                     else:
                         final_result = torch.clip(foreground + final_result, torch.min(foreground, final_result), torch.max(foreground, final_result))
-            final_result = transforms.Resize([img_size,img_size])(final_result)
-            original_img = transforms.Resize([img_size,img_size])(original_img)
             for j in range(original_img.shape[0]):
                 save_img(final_result[j], frame_dir+"/cropped", "{:02d}_{}_predicted.png".format(idx,j))
-
-            # print(final_result.shape)   # 16 4 64 64
-            #                             # 4 4 4 64 64 
-                                          # 4 4 64 4 64 
-                                          # 4 256 256 
-            # final_result = final_result.reshape(2**repeat,2**repeat,-1,img_size, img_size)
-            # final_result = final_result.permute(2,0,3,1,4)
-            # final_result = final_result.reshape(4,256,2**repeat,img_size)
-            # final_result = final_result.reshape(4,256,256).unsqueeze(0)
-            # final_result = final_result.reshape(4, img_size * 2**repeat * 2**repeat, img_size )
-            final_result = make_grid(final_result, nrow=2**repeat, padding=0).unsqueeze(0)
-            print(final_result.shape)
-            save_img(final_result[0], frame_dir+"/cropped", "{:02d}_predicted_resized_intermediate.png".format(idx))
-            # final_result = final_result.reshape(1, 4, 256, 256)
-            original_img = make_grid(original_img, nrow=2**repeat, padding=0).unsqueeze(0)
-
-            if repeat%1==0:
-                save_img(final_result[0], frame_dir, "{:02d}_final.png".format(idx))
+            
+            if img_size%grid_num==0:
+                final_result = transforms.Resize([grid_size,grid_size])(final_result)
+                original_img = transforms.Resize([grid_size,grid_size])(original_img)
+                final_result = make_grid(final_result, nrow=grid_num, padding=0).unsqueeze(0)
+                # print(final_result.shape)
+                save_img(final_result[0], frame_dir+"/cropped", "{:02d}_predicted_resized_intermediate.png".format(idx))
+                # final_result = final_result.reshape(1, 4, 256, 256)
+                original_img = make_grid(original_img, nrow=grid_num, padding=0).unsqueeze(0)
+                
+            elif (img_size - boundary)%grid_num==0:
+                temp_trn = torchvision.transforms.Pad(boundary//2, 0)
+                final_result = transforms.Resize([grid_size,grid_size])(final_result)
+                original_img = transforms.Resize([grid_size,grid_size])(original_img)
+                # print(final_result.shape)
+                final_result = make_grid(final_result, nrow=grid_num, padding=0).unsqueeze(0)
+                # print(final_result.shape)
+                previous_step[:,:,boundary//2:-boundary//2,boundary//2:-boundary//2]=final_result
+                final_result = previous_step
+                # print(final_result.shape)
+                save_img(final_result[0], frame_dir+"/cropped", "{:02d}_predicted_resized_intermediate.png".format(idx))
+                # final_result = final_result.reshape(1, 4, 256, 256)
+                original_img = make_grid(original_img, nrow=grid_num, padding=0).unsqueeze(0)
+                original_img = temp_trn(original_img)
+                
+            elif (img_size - 6)%grid_num==0:
+                temp_trn = torchvision.transforms.Pad(6//2, 0)
+                final_result = transforms.Resize([grid_size,grid_size])(final_result)
+                original_img = transforms.Resize([grid_size,grid_size])(original_img)
+                # print(final_result.shape)
+                final_result = make_grid(final_result, nrow=grid_num, padding=0).unsqueeze(0)
+                # print(final_result.shape)
+                previous_step[:,:,6//2:-6//2,6//2:-6//2]=final_result
+                final_result = previous_step
+                # print(final_result.shape)
+                save_img(final_result[0], frame_dir+"/cropped", "{:02d}_predicted_resized_intermediate.png".format(idx))
+                # final_result = final_result.reshape(1, 4, 256, 256)
+                original_img = make_grid(original_img, nrow=grid_num, padding=0).unsqueeze(0)
+                original_img = temp_trn(original_img)
+            
+            previous_step = final_result
+            save_img(final_result[0], frame_dir, "{}_{:02d}_{}x{}.png".format(input_name[:-4],idx,grid_num,grid_num))
+            print('    saved its result to {:02d}_final.png'.format(idx))
                      
         command = 'convert {}/*.png {}/{}.gif'.format(frame_dir, frame_dir, input_name[:input_name.find('.')])
         print("converting to {}.gif".format(input_name[:input_name.find('.')]))
@@ -441,20 +509,20 @@ def main(input_path, model_path, model_path2, c_dim, generative_path, detail_c_d
 
 
 if __name__ == '__main__':
-    pic_list = ['sangok','1','2','3','starry_night','gradient','ocean','jennifer','face']
-    # pic_list = ['sangok']
-    model_path = "../train/checkpoints/REVISITING_fore32_back1to96_gt100_pix30_dec10_300epoch_genz5c2_lr1e-5/latest_net_g.pth"
+    pic_list = ['sangok','labs','naver','1','2','3','starry_night','gradient','ocean','jennifer','face']
+    # pic_list = ['']
+    model_path = "../train/checkpoints/painter_model_gen1_pix100gt10dec10_lr1e5_300epoch/180_net_g.pth"
     detail_model_path = '../train/checkpoints/DEEPER_DETAILS_ONLY_stroke200_gt100_pix50_dec10_600epoch_genz5c2_600epoch_lr1e-5/latest_net_g.pth'
-    output_dir = './output/cropped_testing_real7'
-    generative_path = '../train/strokes_alpha_gamma100_z5_c2_size256_iter_750000.pt'
+    output_dir = './output/pix100gt10dec10_what_model_really_wanted_to_draw_grid2345_epoch_180'
+    generative_path = '../train/gen1.pt'
     generative_path2 = '../train/markers_large_small_gamma100_z5_c2_size256_last.pt'
     for i in pic_list:
         main(input_path='../picture/{}.jpg'.format(i),
             model_path=model_path,
             model_path2=detail_model_path,
-            c_dim = 2, 
+            c_dim = 0, 
             generative_path = generative_path,
-            detail_c_dim = 2, 
+            detail_c_dim = 0, 
             detail_generative_path = generative_path2,
             output_dir=output_dir,
             generative=True,
@@ -468,6 +536,9 @@ if __name__ == '__main__':
             serial=True,
             decision_switch = True,
             decide_largesmall = 0,
+            no_crop = True,
+            boundary=22, 
+            grid_nums=[2,3,4,5], 
             detail=False)          # if need animation, serial must be True.
     command = 'zip -r {}.zip {}'.format(output_dir, output_dir)
     os.system(command)

@@ -5,7 +5,7 @@ import ntpath
 import time
 from . import util, html
 from subprocess import Popen, PIPE
-
+from PIL import Image
 
 if sys.version_info[0] == 2:
     VisdomExceptionBase = Exception
@@ -70,7 +70,7 @@ class Visualizer:
         if self.display_id > 0:  # connect to a visdom server given <display_port> and <display_server>
             import visdom
             self.ncols = opt.display_ncols
-            self.vis = visdom.Visdom(server=opt.display_server, port=opt.display_port, env=opt.display_env)
+            self.vis = visdom.Visdom(server=opt.display_server, port=opt.display_port, env=opt.name)
             if not self.vis.check_connection():
                 self.create_visdom_connections()
 
@@ -123,6 +123,7 @@ class Visualizer:
                 idx = 0
                 for label, image in visuals.items():
                     image_numpy = util.tensor2im(image)
+                    # print('1',image_numpy.shape)
                     label_html_row += '<td>%s</td>' % label
                     images.append(image_numpy.transpose([2, 0, 1]))
                     idx += 1
@@ -130,6 +131,7 @@ class Visualizer:
                         label_html += '<tr>%s</tr>' % label_html_row
                         label_html_row = ''
                 white_image = np.ones_like(image_numpy.transpose([2, 0, 1])) * 255
+                # print('2',white_image.shape)
                 while idx % ncols != 0:
                     images.append(white_image)
                     label_html_row += '<td></td>'
@@ -137,6 +139,13 @@ class Visualizer:
                 if label_html_row != '':
                     label_html += '<tr>%s</tr>' % label_html_row
                 try:
+                    for i in range(len(images)):
+                        # print('3',images[i].shape, type(images[i]))
+                        # if images[i].shape[0]==4:
+                        images[i] = np.array(Image.fromarray(np.array(images[i]).astype(np.uint8).transpose([1,2,0]),mode='CMYK').convert('RGB')).transpose([2,0,1])
+                    # for i in range(len(images)):
+                    # for i in range(len(images)):
+                        # print('4',images[i].shape, type(images[i]))
                     self.vis.images(images, nrow=ncols, win=self.display_id + 1,
                                     padding=2, opts=dict(title=title + ' images'))
                     label_html = '<table>%s</table>' % label_html
@@ -219,6 +228,25 @@ class Visualizer:
         for k, v in losses.items():
             message += '%s: %.3f ' % (k, v)
 
-        print(message)  # print the message
+        # print(message)  # print the message
+        with open(self.log_name, "a") as log_file:
+            log_file.write('%s\n' % message)  # save the message
+
+
+    def print_current_predictions(self, epoch, iters, losses, t_comp, t_data):
+        """print current losses on console; also save the losses to the disk
+
+        Parameters:
+            epoch (int) -- current epoch
+            iters (int) -- current training iteration during this epoch (reset to 0 at the end of every epoch)
+            losses (OrderedDict) -- training losses stored in the format of (name, float) pairs
+            t_comp (float) -- computational time per data point (normalized by batch_size)
+            t_data (float) -- data loading time per data point (normalized by batch_size)
+        """
+        message = '(epoch: %d, iters: %d, time: %.3f, data: %.3f) ' % (epoch, iters, t_comp, t_data)
+        for k, v in losses.items():
+            message += '%s: %.3f ' % (k, v)
+
+        # print(message)  # print the message
         with open(self.log_name, "a") as log_file:
             log_file.write('%s\n' % message)  # save the message

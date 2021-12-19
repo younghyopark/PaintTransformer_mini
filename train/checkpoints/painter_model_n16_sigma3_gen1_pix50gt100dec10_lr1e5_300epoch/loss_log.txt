@@ -1,0 +1,24 @@
+================ Training Loss (Tue Dec 14 04:42:21 2021) ================
+(epoch: 1, iters: 450, time: 0.078, data: 0.357) pixel: 3.676 gt: 49.233 decision: 12.860 
+(epoch: 1, iters: 900, time: 0.065, data: 0.001) pixel: 4.323 gt: 47.956 decision: 7.720 
+(epoch: 1, iters: 1350, time: 0.046, data: 0.000) pixel: 6.563 gt: 48.616 decision: 6.174 
+(epoch: 1, iters: 1800, time: 0.041, data: 0.000) pixel: 7.213 gt: 48.592 decision: 5.966 
+(epoch: 1, iters: 2250, time: 0.084, data: 0.000) pixel: 10.103 gt: 48.428 decision: 5.395 
+(epoch: 1, iters: 2700, time: 0.043, data: 0.000) pixel: 6.480 gt: 47.710 decision: 5.207 
+(epoch: 1, iters: 3150, time: 0.051, data: 0.000) pixel: 5.662 gt: 47.234 decision: 5.110 
+(epoch: 1, iters: 3600, time: 0.048, data: 0.000) pixel: 5.618 gt: 46.672 decision: 5.111 
+(epoch: 1, iters: 4050, time: 0.051, data: 0.000) pixel: 3.379 gt: 46.346 decision: 4.891 
+(epoch: 1, iters: 4500, time: 0.044, data: 0.000) pixel: 5.870 gt: 45.044 decision: 4.291 
+(epoch: 1, iters: 4950, time: 0.040, data: 0.000) pixel: 7.348 gt: 44.458 decision: 4.475 
+================ Training Loss (Tue Dec 14 04:46:58 2021) ================
+================ Training Loss (Tue Dec 14 04:47:36 2021) ================
+(epoch: 1, iters: 450, time: 0.086, data: 0.450) pixel: 4.961 gt: 48.482 decision: 12.274 
+(epoch: 1, iters: 900, time: 0.047, data: 0.001) pixel: 4.548 gt: 49.540 decision: 8.197 
+(epoch: 1, iters: 1350, time: 0.040, data: 0.001) pixel: 9.089 gt: 48.260 decision: 6.716 
+================ Training Loss (Tue Dec 14 04:49:20 2021) ================
+================ Training Loss (Tue Dec 14 04:49:50 2021) ================
+================ Training Loss (Tue Dec 14 04:50:29 2021) ================
+(epoch: 1, iters: 450, time: 0.050, data: 0.420) pixel: 5.628 gt: 48.830 decision: 16.550 
+(epoch: 1, iters: 900, time: 0.043, data: 0.001) pixel: 5.773 gt: 49.430 decision: 9.069 
+(epoch: 1, iters: 1350, time: 0.052, data: 0.001) pixel: 3.764 gt: 48.092 decision: 6.903 
+================ Training Loss (Tue Dec 14 04:52:16 2021) ================
