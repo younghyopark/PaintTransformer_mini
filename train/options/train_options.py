@@ -10,11 +10,11 @@ class TrainOptions(BaseOptions):
     def initialize(self, parser):
         parser = BaseOptions.initialize(self, parser)
         # visdom and HTML visualization parameters
-        parser.add_argument('--multiply', type=int, default=1,
+        parser.add_argument('--multiply', type=float, default=1,
                             help='frequency of showing training results on screen')
         parser.add_argument('--display_freq', type=int, default=40,
                             help='frequency of showing training results on screen')
-        parser.add_argument('--display_ncols', type=int, default=4,
+        parser.add_argument('--display_ncols', type=int, default=3,
                             help='if positive, display all images in a single visdom web panel '
                                  'with certain number of images per row.')
         parser.add_argument('--display_id', type=int, default=1, help='window id of the web display')
@@ -36,7 +36,9 @@ class TrainOptions(BaseOptions):
         parser.add_argument('--generative_path', default=None, type=str)
         parser.add_argument('--generative_zdim',default=5, type=int)        
 
-        parser.add_argument('--decide_largesmall',action='store_true')        
+        parser.add_argument('--decide_largesmall',action='store_true')      
+        parser.add_argument('--grid_class',action='store_true')     
+        parser.add_argument('--grid_cropout',action='store_true')        
         parser.add_argument('--no-crop',action='store_true')        
         parser.add_argument('--background-tile',action='store_true')        
         parser.add_argument('--tbt-background-tile',action='store_true')        

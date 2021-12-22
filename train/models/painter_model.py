@@ -11,6 +11,8 @@ import torch.nn.init as init
 import os
 import torchvision
 import random
+from torchvision.utils import make_grid
+import torchvision.transforms as transforms
 
 EPS1 = 1e-1
 EPS2 = 1e-1
@@ -224,6 +226,269 @@ class BetaVAE_B_256(nn.Module):
         return self.decoder(z)
     
     
+
+class BetaVAE_B_256_Conditional_Path(nn.Module):
+    """Model proposed in understanding beta-VAE paper(Burgess et al, arxiv:1804.03599, 2018)."""
+
+    def __init__(self, z_dim=5, c_dim = 5, nc=1, encoder = '1DCNN', decoder='1DCNN', n_features = 8, seq_length = 300, mask_gen = '1DCNN', path_type = 'jointpath'):
+        super(BetaVAE_B_256_Conditional_Path, self).__init__()
+        self.nc = nc
+        self.z_dim = z_dim
+        self.c_dim = c_dim
+        self.path_type = path_type
+        self.encoder = encoder
+        self.decoder = decoder
+        
+        ### IMAGE ENCODER
+        print('loaded 2DCNN img encoder')
+        self.encoder_conv = nn.Sequential(
+            nn.Conv2d(nc+1, 32, 4, 2, 1),          # B,  32, 32, 32
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32, 16, 16
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32,  8,  8
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32,  4,  4
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32,  4,  4
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32,  4,  4
+            nn.ReLU(True),
+            View((-1, 32*4*4)),                  # B, 512
+            nn.Linear(32*4*4, 256),              # B, 256
+            nn.ReLU(True),
+            nn.Linear(256, 256),                 # B, 256
+            nn.ReLU(True),
+            nn.Linear(256, 128),             # B, z_dim*2
+        )
+
+        ### PATH ENCODER
+        if encoder=='1DCNN':
+            print('loaded 1DCNN path encoder')
+            self.path_encoder = nn.Sequential(
+                nn.Conv1d(n_features,32,4,2,1),
+                nn.ReLU(True),
+                nn.Conv1d(32,32,4,2,1),
+                nn.ReLU(True),
+                nn.Conv1d(32,32,4,2,1),
+                nn.ReLU(True),
+                nn.Conv1d(32,32,4,2,1),
+                nn.ReLU(True),
+                nn.Conv1d(32,32,4,2,1),
+                nn.ReLU(True),
+                nn.Conv1d(32,32,4,2,1),
+                nn.ReLU(True),
+                View((-1,32*4))
+            )
+
+        elif encoder=='RNN':
+            print('loaded RNN path encoder')
+            self.path_encoder = nn.Sequential(Encoder(number_of_features = n_features,
+                                hidden_size=128,
+                                hidden_layer_depth=3,
+                                latent_length=30,
+                                dropout=0.05,
+                                block='LSTM')
+            )
+
+        ### IMAGE-PATH TO LATENT ENCODER
+        self.encoder_linear = nn.Sequential(
+            nn.Linear(256,256),
+            nn.ReLU(True),
+            nn.Linear(256,z_dim*2)
+        )
+
+        ### GRID ENCODER
+        self.grid_encoder = nn.Sequential(
+            nn.Conv2d(1, 32, 4, 2, 1),          # B,  32, 32, 32
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32, 16, 16
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32,  8,  8
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32,  4,  4
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32,  4,  4
+            nn.ReLU(True),
+            nn.Conv2d(32, 32, 4, 2, 1),          # B,  32,  4,  4
+            nn.ReLU(True),
+            View((-1, 32*4*4)),                  # B, 512
+            nn.Linear(32*4*4, 256),              # B, 256
+            nn.ReLU(True),
+            nn.Linear(256, 256),                 # B, 256
+            nn.ReLU(True),
+            nn.Linear(256, c_dim),             # B, z_dim*2
+        )
+
+        self.img_decoder = nn.Sequential(
+            nn.Linear(z_dim+c_dim, 256),               # B, 256
+            nn.ReLU(True),
+            nn.Linear(256, 256),                 # B, 256
+            nn.ReLU(True),
+            nn.Linear(256, 32*4*4),              # B, 512
+            nn.ReLU(True),
+            View((-1, 32, 4, 4)),                # B,  32,  4,  4
+            nn.ConvTranspose2d(32, 32, 4, 2, 1), # B,  32,  8,  8
+            nn.ReLU(True),
+            nn.ConvTranspose2d(32, 32, 4, 2, 1), # B,  32, 16, 16
+            nn.ReLU(True),
+            nn.ConvTranspose2d(32, 32, 4, 2, 1), # B,  32, 32, 32
+            nn.ReLU(True),
+            nn.ConvTranspose2d(32, 32, 4, 2, 1), # B,  32, 32, 32
+            nn.ReLU(True),
+            nn.ConvTranspose2d(32, 32, 4, 2, 1), # B,  32, 32, 32
+            nn.ReLU(True),
+            nn.ConvTranspose2d(32, nc, 4, 2, 1), # B,  nc, 64, 64
+        )
+        
+        ### PATH DECODER
+        if decoder=='1DCNN':
+            print('loaded 1DCNN path decoder')
+            self.path_decoder = nn.Sequential(
+                nn.Linear(z_dim+c_dim, 256),               # B, 256
+                nn.ReLU(True),
+                nn.Linear(256, 256),                 # B, 256
+                nn.ReLU(True),
+                nn.Linear(256, 32*4),              # B, 512
+                nn.ReLU(True),
+                View((-1, 32, 4)),                # B,  32,  4,  4
+                nn.ConvTranspose1d(32, 32, 4, 3, 3), # B,  32,  8,  8
+                nn.ReLU(True),
+                nn.ConvTranspose1d(32, 32, 4, 3, 2), # B,  32, 32, 32
+                nn.ReLU(True),
+                nn.ConvTranspose1d(32, 32, 4, 2, 1), # B,  32, 32, 32
+                nn.ReLU(True),
+                nn.ConvTranspose1d(32, 32, 4, 2, 0), # B,  32, 32, 32
+                nn.ReLU(True),
+                nn.ConvTranspose1d(32, 32, 4, 2, 0), # B,  32, 32, 32
+                nn.ReLU(True),
+                nn.ConvTranspose1d(32, n_features, 4, 2, 1), # B,  nc, 64, 64
+            )
+
+        elif decoder=='RNN':
+            print('loaded RNN path decoder')
+            self.path_decoder = nn.Sequential(Decoder(sequence_length=seq_length,
+                                batch_size =32,
+                                hidden_size=128,
+                                hidden_layer_depth=3,
+                                latent_length=z_dim + c_dim,
+                                output_size=n_features,
+                                block='LSTM',
+                                dtype=torch.cuda.FloatTensor)
+            )
+
+        ### MASK GENERATOR
+        if mask_gen == 'MLP':
+            print('loaded MLP mask decoder')
+            self.mask_decoder = nn.Sequential(
+                nn.Linear(z_dim+c_dim,256),
+                nn.ReLU(True),
+                nn.Linear(256,300),
+                nn.Tanh()
+            )  
+        elif mask_gen == '1DCNN':
+            print('loaded 1DCNN mask decoder')
+            self.mask_decoder = nn.Sequential(
+                nn.Linear(z_dim+c_dim, 256),               # B, 256
+                nn.ReLU(True),
+                nn.Linear(256, 256),                 # B, 256
+                nn.ReLU(True),
+                nn.Linear(256, 32*4),              # B, 512
+                nn.ReLU(True),
+                View((-1, 32, 4)),                # B,  32,  4,  4
+                nn.ConvTranspose1d(32, 32, 4, 3, 3), # B,  32,  8,  8
+                nn.ReLU(True),
+                nn.ConvTranspose1d(32, 32, 4, 3, 2), # B,  32, 32, 32
+                nn.ReLU(True),
+                nn.ConvTranspose1d(32, 32, 4, 2, 1), # B,  32, 32, 32
+                nn.ReLU(True),
+                nn.ConvTranspose1d(32, 32, 4, 2, 0), # B,  32, 32, 32
+                nn.ReLU(True),
+                nn.ConvTranspose1d(32, 32, 4, 2, 0), # B,  32, 32, 32
+                nn.ReLU(True),
+                nn.ConvTranspose1d(32, 1, 4, 2, 1), # B,  nc, 64, 64
+                View((-1,300))
+            )
+        elif mask_gen == 'RNN':
+            print('loaded RNN mask decoder')
+            self.mask_decoder = nn.Sequential(Decoder(sequence_length=seq_length,
+                                batch_size =32,
+                                hidden_size=128,
+                                hidden_layer_depth=3,
+                                latent_length=z_dim+c_dim,
+                                output_size=1,
+                                block='LSTM',
+                                dtype=torch.cuda.FloatTensor),
+                                nn.Tanh(),
+                                View((-1,300))
+            )
+        
+        self.weight_init()     
+        
+    def weight_init(self):
+        for block in self._modules:
+            for m in self._modules[block]:
+                kaiming_init(m)
+                
+    def forward(self, img, path, grid):
+        # img_feature = self.conv_encoder(x)
+        # t = torch.cat((img_feature, c),dim=1)
+        distributions = self._encode(img, path, grid)
+        mu = distributions[:, :self.z_dim]
+        logvar = distributions[:, self.z_dim:]
+        z = reparametrize(mu, logvar)
+        # t2 = torch.cat((z,c),dim=1)
+        img_recon, path_recon, mask_recon = self._decode(z,grid)
+
+        return img_recon, path_recon, mask_recon, mu, logvar
+    
+    def sample(self,z,grid):
+        img_recon, path_recon, mask_recon = self._decode(z,grid)
+        img_recon = torch.sigmoid(img_recon)
+        return img_recon, path_recon, mask_recon
+
+    def _encode(self, img, path, grid):
+        concat = torch.cat([img,grid],dim=1)
+        img_feature = self.encoder_conv(concat)
+        if self.encoder=='RNN':
+            path = path.permute(2,0,1)
+        path_feature = self.path_encoder(path)
+        t = torch.cat([img_feature, path_feature],dim=1)
+        distributions = self.encoder_linear(t)
+        return distributions
+
+    def _decode(self, z,grid):
+        grid_feature = self.grid_encoder(grid)
+        t = torch.cat([z, grid_feature],dim=1)
+
+        recon_img = self.img_decoder(t)
+        # print(z.shape)
+        recon_path = self.path_decoder(t)
+        if self.decoder=='RNN':
+            recon_path = recon_path.permute(1,2,0)
+        
+        recon_mask = self.mask_decoder(t)
+        # print(recon_mask.shape, recon_path.shape)
+        recon_path = (recon_mask>0).float().unsqueeze(1) * recon_path
+        if self.path_type =='jointpath':
+            temp = -torch.ones(recon_path.shape)*2
+        elif self.path_type=='strokepath':
+            temp = -torch.ones(recon_path.shape)*1
+        else:
+            raise ValueError('A very specific bad thing happened.')
+        recon_path = recon_path + (recon_mask<=0).float().unsqueeze(1) * temp.cuda()
+        # recon_length = self.length_decoder(z)
+        # print(recon_img.shape, recon_path.shape)
+        # print(recon_path.shape, recon_length.shape)
+        # mask = torch.zeros(recon_path.shape[0],9,300).cuda()
+        # idxs = torch.argmax(recon_length, dim=1)
+        # for i in range(recon_path.shape[0]):
+        #     mask [i,:,:int(recon_length[i]*300)] = 1
+        # print(recon_path.shape, mask.shape)
+        # recon_path = recon_path
+        return recon_img, recon_path, recon_mask
+    
+
     
     
 class PainterModel(BaseModel):
@@ -247,11 +512,17 @@ class PainterModel(BaseModel):
         self.loss_names = ['pixel', 'gt', 'decision']
         if self.opt.long_horizon:
             self.visual_names = ['old', 'render','immediate_next','rec']
+        elif self.opt.grid_class:
+            if self.opt.grid_cropout:
+                self.visual_names = ['old', 'render','rec','grid_class_visualize',
+                                    'old_grid_crop_resize','render_grid_crop_resize','rec_grid_crop_resize','grid_class_visualize']
+            else:
+                self.visual_names = ['real_bg', 'old', 'render','rec']
         else:
             self.visual_names = ['old', 'render','rec']
         self.model_names = ['g']
         
-        self.d = self.opt.generative_zdim + 4 + int(self.opt.decide_largesmall)
+        self.d = self.opt.generative_zdim + 4 + int(self.opt.decide_largesmall or self.opt.grid_class)
         self.d_shape = self.d
             
         def read_img(img_path, img_type='RGB'):
@@ -270,7 +541,7 @@ class PainterModel(BaseModel):
                 [brush_large_vertical, brush_large_horizontal], dim=0)
         else:
             if self.opt.generative_cdim >0 : 
-                model = BetaVAE_B_256_Conditional(z_dim=5, c_dim = self.opt.generative_cdim, nc=1)       
+                model = BetaVAE_B_256_Conditional_Path(z_dim=5, c_dim = 5, nc=1)       
                 state = torch.load(os.path.join('./{}.pt'.format(self.opt.generative_path)),map_location='cpu')        
                 model.load_state_dict(state['model_states']['net'])
                 for param in model.parameters():
@@ -282,13 +553,27 @@ class PainterModel(BaseModel):
                 for param in model.parameters():
                     param.requires_grad = False
             self.generative_model = model.to(self.device)        
+
+            if self.opt.grid_class:
+                model = BetaVAE_B_256(z_dim=5, nc=1)       
+                state = torch.load(os.path.join('./gen1.pt'.format(self.opt.generative_path)),map_location='cpu')        
+                model.load_state_dict(state['model_states']['net'])
+                for param in model.parameters():
+                    param.requires_grad = False
+                self.background_generative_model = model.to(self.device)
         
         if 'DEEPER' not in self.opt.name:
-            net_g = networks.Painter_Original(self.d_shape, opt.used_strokes, 256,
-                                     n_enc_layers=opt.num_blocks, n_dec_layers=opt.num_blocks)
+            if not self.opt.grid_class:
+                net_g = networks.Painter_Original(self.d_shape, opt.used_strokes, 256,
+                                        n_enc_layers=opt.num_blocks, n_dec_layers=opt.num_blocks)
+            else:
+                print('loaded conditional model. original depth.')
+                net_g = networks.Painter_Conditional(self.d_shape, opt.used_strokes, 256,
+                                        n_enc_layers=opt.num_blocks, n_dec_layers=opt.num_blocks)
         else:
             net_g = networks.Painter(self.d_shape, opt.used_strokes, 512,
-                                     n_enc_layers=opt.num_blocks, n_dec_layers=opt.num_blocks, largesmall=int(self.opt.decide_largesmall))
+                                    n_enc_layers=opt.num_blocks, n_dec_layers=opt.num_blocks, largesmall=int(self.opt.decide_largesmall))
+                
             
         self.net_g = networks.init_net(net_g, opt.init_type, opt.init_gain, self.gpu_ids)
         
@@ -298,10 +583,13 @@ class PainterModel(BaseModel):
         self.old = None
         self.render = None
         self.rec = None
+        self.real_bg = None
         self.gt_param = None
         self.pred_param = None
         self.gt_decision = None
         self.pred_decision = None
+        self.grid_class = None
+        self.gt_grid_class = None
         self.patch_size = 256
         self.loss_pixel = torch.tensor(0., device=self.device)
         self.loss_gt = torch.tensor(0., device=self.device)
@@ -313,7 +601,6 @@ class PainterModel(BaseModel):
             self.optimizer = torch.optim.Adam(self.net_g.parameters(), lr=opt.lr, betas=(opt.beta1, 0.999))
             self.optimizers.append(self.optimizer)
 
-    
     def latent2stroke2(self, param, H,W, select_c = 0):
         ## define transformations
         trn_resize = torchvision.transforms.Resize([H+40,W+40])
@@ -348,6 +635,182 @@ class PainterModel(BaseModel):
         matte_color = cmyk*color*alpha
         return matte_color, binary
 
+    def latent2stroke2_bg(self, param, H,W):
+        ## define transformations
+        trn_resize = torchvision.transforms.Resize([H,W])
+        
+        param_latent = (param[:,:self.opt.generative_zdim] / torch.norm(param[:,:self.opt.generative_zdim],dim=1).unsqueeze(1))\
+            * (1+param[:,self.opt.generative_zdim:self.opt.generative_zdim+1])
+
+        orig_img = self.background_generative_model.sample(param_latent) 
+            
+        orig_img = trn_resize(orig_img)
+        
+        EPS = EPS1
+        binary = (orig_img>EPS).float()
+        cmyk = binary.repeat(1,4,1,1)
+        alpha = orig_img
+        
+        color = (1+param[:,-4:]).unsqueeze(2).unsqueeze(3)/2
+        matte_color = cmyk*color*alpha
+        return matte_color, binary
+
+    def generate_gridclass(self, grid_num, grid_index):
+        GRID_INFO = {
+            2: (0, 256//2), 
+            3: (4, 252//3), 
+            4: (0, 256//4),
+            5: (6, 250//5),
+            6: (4, 252//6)
+        }
+        
+        grid_imgs = []
+
+        padding, grid_size = GRID_INFO[grid_num]
+        
+        temp = torch.zeros(grid_num**2, 1, grid_size, grid_size)
+        temp[grid_index] = torch.ones(1, grid_size, grid_size)
+        
+        grid = make_grid(temp, padding=0, nrow=grid_num)
+        
+        TPad = transforms.Pad(padding//2)
+        TGrayScale = transforms.Grayscale(num_output_channels=1)
+        grid = TGrayScale(TPad(grid))
+        
+        return grid
+
+    def crop_out_grid(self, imgs, grid, H=256, W=256, resize = True):
+        if not (imgs.dim()==4 and grid.dim()==4):
+            raise ValueError('only accept batch')
+        TResize = transforms.Resize([H,W])
+        cropped = []
+        for i in range(imgs.shape[0]):
+            nonzero = grid[i].nonzero()
+            
+            x_min = torch.min(nonzero[:,1])
+            x_max = torch.max(nonzero[:,1])
+            y_min = torch.min(nonzero[:,2])
+            y_max = torch.max(nonzero[:,2])
+            temp = imgs[i][:,x_min:x_max, y_min:y_max]
+            if resize:
+                temp = TResize(temp)
+            cropped.append(temp)
+        result = torch.stack(cropped)
+        return result
+
+
+    def generate_gridclasses(self, grid_nums, grid_indexs):
+        GRID_INFO = {
+            2: (0, 256//2), 
+            3: (4, 252//3), 
+            4: (0, 256//4),
+            5: (6, 250//5),
+            6: (4, 252//6)
+        }
+        
+        grid_imgs = []
+        for i, grid_num in enumerate(grid_nums):
+            padding, grid_size = GRID_INFO[grid_num]
+            grid_index =  grid_indexs[i]
+            
+            temp = torch.zeros(grid_num**2, 1, grid_size, grid_size)
+            temp[grid_index] = torch.ones(1, grid_size, grid_size)
+            
+            grid = make_grid(temp, padding=0, nrow=grid_num)
+            
+            TPad = transforms.Pad(padding//2)
+            TGrayScale = transforms.Grayscale(num_output_channels=1)
+            grid = TGrayScale(TPad(grid))
+
+            grid_imgs.append(grid)
+
+        grid_imgs = torch.stack(grid_imgs,dim=0)
+        
+        return grid_imgs
+
+    def randomly_generate_gridclasses(self, batch_size, grid_num_choices = [2,3,4,5]):
+        GRID_INFO = {
+            2: (0, 256//2), 
+            3: (4, 252//3), 
+            4: (0, 256//4),
+            5: (6, 250//5),
+            6: (4, 252//6)
+        }
+        grid_nums = []
+        grid_indexs = []
+        for i in range(batch_size):
+            random_grid_num = np.random.choice(grid_num_choices)
+            random_grid_index = np.random.randint(random_grid_num**2)
+            grid_nums.append(random_grid_num)
+            grid_indexs.append(random_grid_index)
+        
+        grid_imgs = []
+        for i, grid_num in enumerate(grid_nums):
+            padding, grid_size = GRID_INFO[grid_num]
+            grid_index =  grid_indexs[i]
+            
+            temp = torch.zeros(grid_num**2, 1, grid_size, grid_size)
+            temp[grid_index] = torch.ones(1, grid_size, grid_size)
+            
+            grid = make_grid(temp, padding=0, nrow=grid_num)
+            
+            TPad = transforms.Pad(padding//2)
+            TGrayScale = transforms.Grayscale(num_output_channels=1)
+            grid = TGrayScale(TPad(grid))
+
+            grid_imgs.append(grid)
+
+        grid_imgs = torch.stack(grid_imgs,dim=0)
+        
+        return grid_imgs        
+
+    def latent2stroke3(self, param, H,W, grid_classes):
+        ## define transformations
+        # trn_crop= torchvision.transforms.CenterCrop([H,W])
+        trn_resize = torchvision.transforms.Resize([H,W])
+        
+        param_latent = (param[:,:self.opt.generative_zdim] / torch.norm(param[:,:self.opt.generative_zdim],dim=1).unsqueeze(1))\
+            * (1+param[:,self.opt.generative_zdim:self.opt.generative_zdim+1])
+
+        # print(param_latent.shape, grid_classes.shape)
+        orig_img, _, _ = self.generative_model.sample(param_latent, grid_classes) 
+            
+        orig_img =  trn_resize(orig_img)
+        
+        EPS = EPS1
+        binary = (orig_img>EPS).float()
+        cmyk = binary.repeat(1,4,1,1)
+        alpha = orig_img
+        
+        color = (1+param[:,-4:]).unsqueeze(2).unsqueeze(3)/2
+        matte_color = cmyk*color*alpha
+        return matte_color, binary
+
+    def latent2stroke_randomgrid(self, param, H,W):
+        ## define transformations
+        # trn_crop= torchvision.transforms.CenterCrop([H,W])
+        trn_resize = torchvision.transforms.Resize([H,W])
+
+        grid_class = self.randomly_generate_gridclasses(batch_size = param.shape[0])
+        grid_class = grid_class.cuda()
+
+        param_latent = (param[:,:self.opt.generative_zdim] / torch.norm(param[:,:self.opt.generative_zdim],dim=1).unsqueeze(1))\
+            * (1+param[:,self.opt.generative_zdim:self.opt.generative_zdim+1])
+
+        # print(param_latent.shape, grid_class.shape)
+        orig_img, _, _ = self.generative_model.sample(param_latent, grid_class) 
+            
+        orig_img =  trn_resize(orig_img)
+        
+        EPS = EPS1
+        binary = (orig_img>EPS).float()
+        cmyk = binary.repeat(1,4,1,1)
+        alpha = orig_img
+        
+        color = (1+param[:,-4:]).unsqueeze(2).unsqueeze(3)/2
+        matte_color = cmyk*color*alpha
+        return matte_color, binary
+        
 
     def set_input2(self, input_dict, background_stroke_times = None):
         """
@@ -618,11 +1081,122 @@ class PainterModel(BaseModel):
             self.render = self.render[idx].view(self.render.size())
             self.content_wc = self.content_wc[idx].view(self.content_wc.size())
             
+    def set_input_grid(self, input_dict):
+        self.image_paths = input_dict['A_paths']
+        bg_stroke_num = int(self.opt.used_strokes * self.opt.multiply)
+        with torch.no_grad():
+
+            old_param = -1 + torch.rand(self.opt.batch_size, bg_stroke_num, self.d, device=self.device) * 2
+            old_param = old_param.view(-1, self.d).contiguous()
+
+            foregrounds, alphas = self.latent2stroke2_bg(old_param, self.patch_size, self.patch_size)
+
+            foregrounds = foregrounds.view(self.opt.batch_size, bg_stroke_num, 4, self.patch_size,
+                                            self.patch_size).contiguous()
+            alphas = alphas.view(self.opt.batch_size, bg_stroke_num, 1, self.patch_size,
+                                    self.patch_size).contiguous()
+            result_content_wc = torch.zeros(self.opt.batch_size, 4, self.patch_size, self.patch_size, device=self.device)
+            old_decision = torch.ones(self.opt.batch_size, bg_stroke_num, device=self.device)
+            
+            for i in range(bg_stroke_num):
+                content_wc = foregrounds[:, i, :, :, :]
+                alpha = alphas[:, i, :, :, :]
+                # for j in range(i):
+                #     iou = (torch.sum(alpha * alphas[:, j, :, :, :], dim=(-3, -2, -1)) + 1e-5) / (
+                #             torch.sum(alphas[:, j, :, :, :], dim=(-3, -2, -1)) + 1e-5)
+                #     old_decision[:, i] = ((iou < 0.95) | (~old_decision[:, j].bool())).float() * old_decision[:, i]
+                decision = old_decision[:, i].view(self.opt.batch_size, 1, 1, 1).contiguous()
+                result_content_wc = torch.clip(content_wc*decision+ result_content_wc, torch.min(content_wc,result_content_wc),torch.max(content_wc,result_content_wc))
+                # old = result_content_wc
+
+
+            old_param = -1 + torch.rand(self.opt.batch_size, bg_stroke_num, self.d, device=self.device) * 2
+            old_param = old_param.view(-1, self.d).contiguous()
+
+            foregrounds, alphas = self.latent2stroke_randomgrid(old_param, self.patch_size, self.patch_size)
+
+            foregrounds = foregrounds.view(self.opt.batch_size, bg_stroke_num, 4, self.patch_size,
+                                            self.patch_size).contiguous()
+            alphas = alphas.view(self.opt.batch_size, bg_stroke_num, 1, self.patch_size,
+                                    self.patch_size).contiguous()
+            # result_content_wc = torch.zeros(self.opt.batch_size, 4, self.patch_size, self.patch_size, device=self.device)
+            old_decision = torch.ones(self.opt.batch_size, bg_stroke_num, device=self.device)
+            
+            for i in range(bg_stroke_num):
+                content_wc = foregrounds[:, i, :, :, :]
+                alpha = alphas[:, i, :, :, :]
+                # for j in range(i):
+                #     iou = (torch.sum(alpha * alphas[:, j, :, :, :], dim=(-3, -2, -1)) + 1e-5) / (
+                #             torch.sum(alphas[:, j, :, :, :], dim=(-3, -2, -1)) + 1e-5)
+                #     old_decision[:, i] = ((iou < 0.8) | (~old_decision[:, j].bool())).float() * old_decision[:, i]
+                decision = old_decision[:, i].view(self.opt.batch_size, 1, 1, 1).contiguous()
+                result_content_wc = torch.clip(content_wc*decision+ result_content_wc, torch.min(content_wc,result_content_wc),torch.max(content_wc,result_content_wc))
+                old = result_content_wc
+                
+            self.grid_class = self.randomly_generate_gridclasses(self.opt.batch_size)   # batch_size, 1, 256, 256
+            self.grid_class = self.grid_class.to(self.device)
+            
+            self.old = old.view(self.opt.batch_size, 4, self.patch_size, self.patch_size).contiguous()
+            self.real_bg = self.old
+            self.old = self.old #* self.grid_class #+ (1-self.grid_class).repeat(1,4,1,1)
+            self.old_content_wc = self.old.clone()
+
+            gt_param = -1 + torch.rand(self.opt.batch_size, self.opt.used_strokes, self.d, device=self.device) * 2 # batch_size, stroke_num, param_dim
+            gt_grid_class = self.grid_class.unsqueeze(1).repeat(1, self.opt.used_strokes, 1, 1, 1)  # batch_sizez, stroke_num, 1, 256, 256
+
+            self.gt_param = gt_param[:, :, :self.d_shape]
+            gt_param = gt_param.view(-1, self.d).contiguous()
+            gt_grid_class = gt_grid_class.view(-1, 1, 256, 256).contiguous()
+            self.gt_grid_class = gt_grid_class
+
+            foregrounds, alphas = self.latent2stroke3(gt_param, self.patch_size, self.patch_size, gt_grid_class)
+            foregrounds = foregrounds.view(self.opt.batch_size, self.opt.used_strokes, 4, self.patch_size,
+                                           self.patch_size).contiguous()
+            alphas = alphas.view(self.opt.batch_size, self.opt.used_strokes, 1, self.patch_size,
+                                 self.patch_size).contiguous()
+            self.render = self.old.clone()
+            self.content_wc = self.old_content_wc.clone()
+            gt_decision = torch.ones(self.opt.batch_size, self.opt.used_strokes, device=self.device)
+
+            for i in range(self.opt.used_strokes):
+                content_wc = foregrounds[:, i, :, :, :]
+                alpha = alphas[:, i, :, :, :]
+                for j in range(i):
+                    iou = (torch.sum(alpha * alphas[:, j, :, :, :], dim=(-3, -2, -1)) + 1e-5) / (
+                            torch.sum(alphas[:, j, :, :, :], dim=(-3, -2, -1)) + 1e-5)
+                    gt_decision[:, i] = ((iou < 0.8) | (~gt_decision[:, j].bool())).float() * gt_decision[:, i]
+                decision = gt_decision[:, i].view(self.opt.batch_size, 1, 1, 1).contiguous()
+                self.content_wc = torch.clip(content_wc*decision+ self.content_wc, torch.min(content_wc,self.content_wc),torch.max(content_wc,self.content_wc))
+                self.render = self.content_wc
+
+            if self.opt.grid_cropout:
+                self.old_grid_crop_resize = self.crop_out_grid(self.old, self.grid_class)
+                self.render_grid_crop_resize = self.crop_out_grid(self.render, self.grid_class)
+                self.grid_class_visualize = 1 - self.grid_class.repeat(1,4,1,1)
+            self.gt_decision = gt_decision
+            
+            ## shuffle the batch
+            # idx = torch.randperm(self.gt_param.shape[0])
+            # self.gt_param = self.gt_param[idx].view(self.gt_param.size())
+            # self.gt_decision = self.gt_decision[idx].view(self.gt_decision.size())
+            # self.old = self.old[idx].view(self.old.size())
+            # self.render = self.render[idx].view(self.render.size())
+            # self.content_wc = self.content_wc[idx].view(self.content_wc.size())
+
 
     def forward(self):
-        # print(self.render.shape, self.old.shape)
-        param, decisions = self.net_g(self.render, self.old)
-        # print(param.shape, decisions.shape)
+        # param : batch_size, stroke_num, param_dim
+        # decision : batch_size, stroke_num
+        # render : batch_size, 4, 256, 256
+        # old : batch_size, 4, 256, 256
+        # grid_class : batch_size, 1, 256, 256
+        if not self.opt.grid_class:
+            param, decisions = self.net_g(self.render, self.old)
+        else:
+            if self.opt.grid_cropout:
+                param, decisions = self.net_g(self.render_grid_crop_resize, self.old_grid_crop_resize, self.grid_class)
+            else:
+                param, decisions = self.net_g(self.render, self.old, self.grid_class)
         
         self.pred_decision = decisions.view(-1, self.opt.used_strokes).contiguous()
         self.pred_param = param[:, :, :self.d_shape] 
@@ -632,7 +1206,10 @@ class PainterModel(BaseModel):
             foregrounds = morphology.Dilation2d(m=1)(foregrounds)
             alphas = morphology.Erosion2d(m=1)(alphas)
         else:
-            foregrounds, alphas = self.latent2stroke2(param, self.patch_size, self.patch_size, int(self.opt.latent2stroke_cvalues[1]))
+            if self.opt.grid_class:
+                foregrounds, alphas = self.latent2stroke3(param, self.patch_size, self.patch_size, self.gt_grid_class)
+            else:
+                foregrounds, alphas = self.latent2stroke2(param, self.patch_size, self.patch_size, int(self.opt.latent2stroke_cvalues[1]))
 
         foregrounds = foregrounds.view(-1, self.opt.used_strokes, 4, self.patch_size, self.patch_size)
         alphas = alphas.view(-1, self.opt.used_strokes, 1, self.patch_size, self.patch_size)
@@ -647,10 +1224,15 @@ class PainterModel(BaseModel):
             self.rec_content_wc = torch.clip(content_wc*decision+ self.rec_content_wc, torch.min(content_wc,self.rec_content_wc),torch.max(content_wc,self.rec_content_wc))
             self.rec = self.rec_content_wc
 
+        self.rec_grid_crop_resize = self.crop_out_grid(self.rec, self.grid_class)
+
     def optimize_parameters(self):
         self.forward()
         if not self.opt.long_horizon:
-            self.loss_pixel = self.criterion_pixel(self.rec, self.render) * self.opt.lambda_pixel
+            if self.opt.grid_cropout:
+                self.loss_pixel = self.criterion_pixel(self.rec_grid_crop_resize, self.render_grid_crop_resize) * self.opt.lambda_pixel
+            else:
+                self.loss_pixel = self.criterion_pixel(self.rec, self.render) * self.opt.lambda_pixel
         else:
             self.loss_pixel = self.criterion_pixel(self.rec, self.immediate_next) * self.opt.lambda_pixel
         cur_valid_gt_size = 0

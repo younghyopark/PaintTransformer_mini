@@ -35,13 +35,19 @@ if __name__ == '__main__':
 
             total_iters += opt.batch_size
             epoch_iter += opt.batch_size
-            if not opt.long_horizon:
+            if not (opt.long_horizon or opt.grid_class):
                 tic = time.time()
                 model.set_input(data, opt.multiply)         # unpack data from dataset and apply preprocessing
                 toc = time.time()
                 input_t = toc-tic
 
                 # print(toc-tic)
+            elif opt.grid_class:
+                # print('grid-aware')
+                tic = time.time()
+                model.set_input_grid(data)
+                toc = time.time()
+                input_t = toc-tic
             else:
                 # print('using revised model for long-horizon task')
                 tic = time.time()
